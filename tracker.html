@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Споживання по категоріях</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+  <style>
+    :root {
+      --bg: #111;
+      --panel: #1a1a1a;
+      --text: #eee;
+      --muted: #444;
+      --btn: #555;
+      --btn-hover: #777;
+      --accent: rgb(75,192,192);
+    }
+    body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+    .container { max-width: 1200px; margin: auto; }
+    .dataset { border: 1px solid var(--muted); border-radius: 8px; padding: 15px; margin-bottom: 25px; background: var(--panel); }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid var(--muted); padding: 8px; text-align: center; }
+    input, button { padding: 6px; margin: 2px; border-radius: 4px; border: 1px solid var(--muted); }
+    input[type="date"], input[type="number"], input[type="text"] { background: #222; color: var(--text); }
+    button { cursor: pointer; background: var(--btn); color: #fff; }
+    button:hover { background: var(--btn-hover); }
+    .chart-wrap { position: relative; width: 100%; height: 400px; margin-top: 10px; }
+    canvas { width: 100% !important; height: 100% !important; display: block; }
+    .controls button { margin: 0 2px; }
+    .stats { margin: 8px 0; padding: 6px; background: #222; border-radius: 6px; font-size: 14px; }
+    @media (max-width: 768px) { th, td { font-size: 12px; } .chart-wrap { height: 260px; } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Споживання по категоріях</h1>
+  <div id="datasets"></div>
+  <div>
+    <input type="text" id="newCategory" placeholder="Назва нової категорії (напр. Газ)" />
+    <button onclick="addDataset()">Додати категорію</button>
+  </div>
+</div>
+
+<script>
+let datasets = [];
+
+function addDataset() {
+  const name = document.getElementById('newCategory').value.trim();
+  if (!name) return;
+  datasets.push({ name, entries: [], chart: null, barChart: null });
+  document.getElementById('newCategory').value = '';
+  renderDatasets();
+}
+
+function addEntry(i) {
+  const today = new Date().toISOString().slice(0,10);
+  datasets[i].entries.push({ date: today, value: 0 });
+  renderDatasets();
+}
+
+function updateEntry(i, j, field, value) {
+  datasets[i].entries[j][field] = field === 'value' ? Number(value) : value;
+  renderDatasets();
+}
+
+function deleteEntry(i, j) {
+  datasets[i].entries.splice(j, 1);
+  renderDatasets();
+}
+
+function moveEntry(i, j, dir) {
+  const arr = datasets[i].entries;
+  if (dir === -1 && j > 0) [arr[j-1], arr[j]] = [arr[j], arr[j-1]];
+  if (dir === 1 && j < arr.length-1) [arr[j+1], arr[j]] = [arr[j], arr[j+1]];
+  renderDatasets();
+}
+
+function exportCSV(i) {
+  const rows = [['category','date','value'], ...datasets[i].entries.map(e => [datasets[i].name, e.date, e.value])];
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${datasets[i].name}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function importCSV(event, i) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const lines = e.target.result.split(/\r?\n/).filter(Boolean).slice(1);
+    const entries = lines.map(line => {
+      const [category, date, value] = line.split(',');
+      return { date: (date || '').trim(), value: Number(value) };
+    }).filter(r => r.date);
+    datasets[i].entries = entries;
+    renderDatasets();
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function pickTimeUnit(minDate, maxDate) {
+  const spanDays = (maxDate - minDate) / 86400000;
+  if (spanDays <= 7) return 'day';
+  if (spanDays <= 90) return 'week';
+  if (spanDays <= 730) return 'month';
+  return 'year';
+}
+
+function drawChart(i) {
+  const ctx = document.getElementById(`chart-${i}`).getContext('2d');
+  if (datasets[i].chart) datasets[i].chart.destroy();
+
+  const sorted = [...datasets[i].entries].filter(e => e.date).sort((a,b) => new Date(a.date) - new Date(b.date));
+  const points = sorted.map(e => ({ x: e.date, y: e.value }));
+
+  let xMin, xMax, unit = 'day', yMin;
+  if (sorted.length) {
+    const min = new Date(sorted[0].date);
+    const max = new Date(sorted[sorted.length - 1].date);
+    unit = pickTimeUnit(min, max);
+    const pad = 12 * 60 * 60 * 1000;
+    xMin = new Date(min.getTime() - pad);
+    xMax = new Date(max.getTime() + pad);
+    yMin = Math.min(...sorted.map(e=>e.value)) * 0.95;
+  }
+
+  datasets[i].chart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [{ label: datasets[i].name, data: points, borderColor: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), fill: false, tension: 0.15, pointRadius: 3 }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { type: 'time', time: { unit }, min: xMin, max: xMax, grid: { color: '#2b2b2b' } },
+        y: { beginAtZero: false, min: yMin, grid: { color: '#2b2b2b' } }
+      },
+      plugins: { legend: { labels: { color: '#ddd' } } }
+    }
+  });
+
+  drawBarChart(i, sorted);
+  updateStats(i, sorted);
+}
+
+function drawBarChart(i, sorted) {
+    const ctx = document.getElementById(`bar-${i}`).getContext('2d');
+    if (datasets[i].barChart) datasets[i].barChart.destroy();
+
+    /* якщо даних немає – нічого не малюємо */
+    if (!sorted.length) return;
+
+    /* групування споживання за місяцями */
+    const monthTotals = {};
+
+    /* перетворюємо рядки у Date‑об’єкти один раз, щоб не парсити кілька разів */
+    const entries = sorted.map(e => ({
+      date: new Date(e.date),
+      day: e.date.slice(8, 10),
+      month: e.date.slice(0, 7),          // "YYYY-MM"
+      value: e.value
+    }));
+
+    /* розраховуємо споживання між кожною парою вимірювань */
+    for (let k = 0; k < entries.length - 1; k++) {
+      const a = entries[k];
+      const b = entries[k + 1];
+      const diff = b.value - a.value;                      // споживання за проміжок
+      const days = (b.date - a.date) / (24 * 60 * 60 * 1000); // кількість днів між вимірюваннями
+      if (days <= 0) continue;                             // пропускаємо некоректні дані
+
+      /* якщо вимірювання попадають у один і той самий місяць – просто додаємо споживання */
+      if (a.month === b.month) {
+        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff;
+      } else {
+        /* простий розподіл між двома місяцями (пропорційно кількості днів у кожному місяці) */
+        const firstMonthDays = new Date(a.month + '-01').setMonth(new Date(a.month).getMonth() + 1) - a.date;
+        const firstMonthDaysCnt = firstMonthDays / (24 * 60 * 60 * 1000);
+        const secondMonthDaysCnt = days - firstMonthDaysCnt;
+
+        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
+        monthTotals[b.month] = (monthTotals[b.month] || 0) + diff * (secondMonthDaysCnt / days);
+      }
+    }
+
+    const labels = Object.keys(monthTotals).sort();
+    const data = labels.map(m => monthTotals[m]);
+
+    datasets[i].barChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Споживання за місяць (графік 1–30)',
+          data,
+          backgroundColor: 'rgba(75,192,192,0.6)'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { color: '#2b2b2b' } },
+          y: { grid: { color: '#2b2b2b' } }
+        },
+        plugins: { legend: { labels: { color: '#ddd' } } }
+      }
+    });
+  }
+  
+function updateStats(i, sorted) {
+  const statsBox = document.getElementById(`stats-${i}`);
+  if (!sorted.length) { statsBox.innerHTML = ''; return; }
+  const total = sorted[sorted.length-1].value - sorted[0].value;
+  statsBox.innerHTML = `Сумарний приріст: ${total}`;
+}
+
+function renderDatasets() {
+  const host = document.getElementById('datasets');
+  host.innerHTML = '';
+  datasets.forEach((ds, i) => {
+    const card = document.createElement('div');
+    card.className = 'dataset';
+    card.innerHTML = `
+      <h2>${ds.name}</h2>
+      <table>
+        <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
+        <tbody>
+          ${ds.entries.map((e,j) => `
+            <tr>
+              <td>${j+1}</td>
+              <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
+              <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
+              <td class="controls">
+                <button onclick="moveEntry(${i},${j},-1)">↑</button>
+                <button onclick="moveEntry(${i},${j},1)">↓</button>
+                <button onclick="deleteEntry(${i},${j})">Видалити</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
+        <button onclick="addEntry(${i})">Додати рядок</button>
+        <button onclick="exportCSV(${i})">Експорт CSV</button>
+        <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer;">
+          <span style="padding:6px 10px; background:var(--btn); border:1px solid var(--muted); border-radius:4px;">Імпорт CSV</span>
+          <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
+        </label>
+      </div>
+      <div class="stats" id="stats-${i}"></div>
+      <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
+      <div class="chart-wrap" style="height:250px"><canvas id="bar-${i}"></canvas></div>
+    `;
+    host.appendChild(card);
+    drawChart(i);
+  });
+}
+
+renderDatasets();
+</script>
+</body>
+</html>
