@@ -48,8 +48,20 @@ let datasets = [];
 function addDataset() {
   const name = document.getElementById('newCategory').value.trim();
   if (!name) return;
-  datasets.push({ name, entries: [], chart: null, barChart: null });
+  datasets.push({ name, entries: [], chart: null, barChart: null, collapsed: false });
   document.getElementById('newCategory').value = '';
+  renderDatasets();
+}
+
+document.getElementById('newCategory').addEventListener('keydown', function(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    addDataset();
+  }
+});
+
+function toggleCollapse(i) {
+  datasets[i].collapsed = !datasets[i].collapsed;
   renderDatasets();
 }
 
@@ -97,6 +109,7 @@ function importCSV(event, i) {
       return { date: (date || '').trim(), value: Number(value) };
     }).filter(r => r.date);
     datasets[i].entries = entries;
+    datasets[i].collapsed = true; // Collapse after import
     renderDatasets();
     event.target.value = '';
   };
@@ -270,29 +283,32 @@ function renderDatasets() {
     card.className = 'dataset';
     card.innerHTML = `
       <h2>${ds.name}</h2>
-      <table>
-        <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
-        <tbody>
-          ${ds.entries.map((e,j) => `
-            <tr>
-              <td>${j+1}</td>
-              <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
-              <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
-              <td class="controls">
-                <button onclick="moveEntry(${i},${j},-1)">↑</button>
-                <button onclick="moveEntry(${i},${j},1)">↓</button>
-                <button onclick="deleteEntry(${i},${j})">Видалити</button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
-        <button onclick="addEntry(${i})">Додати рядок</button>
-        <button onclick="exportCSV(${i})">Експорт CSV</button>
-        <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer;">
-          <span style="padding:6px 10px; background:var(--btn); border:1px solid var(--muted); border-radius:4px;">Імпорт CSV</span>
-          <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
-        </label>
+      <button onclick="toggleCollapse(${i})">${ds.collapsed ? 'Розгорнути' : 'Згорнути'}</button>
+      <div style="display:${ds.collapsed ? 'none' : 'block'};">
+        <table>
+          <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
+          <tbody>
+            ${ds.entries.map((e,j) => `
+              <tr>
+                <td>${j+1}</td>
+                <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
+                <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
+                <td class="controls">
+                  <button onclick="moveEntry(${i},${j},-1)">↑</button>
+                  <button onclick="moveEntry(${i},${j},1)">↓</button>
+                  <button onclick="deleteEntry(${i},${j})">Видалити</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
+          <button onclick="addEntry(${i})">Додати рядок</button>
+          <button onclick="exportCSV(${i})">Експорт CSV</button>
+          <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer;">
+            <span style="padding:6px 10px; background:var(--btn); border:1px solid var(--muted); border-radius:4px;">Імпорт CSV</span>
+            <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
+          </label>
+        </div>
       </div>
       <div class="stats" id="stats-${i}"></div>
       <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
