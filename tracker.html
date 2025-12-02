@@ -48,8 +48,20 @@ let datasets = [];
 function addDataset() {
   const name = document.getElementById('newCategory').value.trim();
   if (!name) return;
-  datasets.push({ name, entries: [], chart: null, barChart: null });
+  datasets.push({ name, entries: [], chart: null, barChart: null, collapsed: false });
   document.getElementById('newCategory').value = '';
+  renderDatasets();
+}
+
+document.getElementById('newCategory').addEventListener('keydown', function(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    addDataset();
+  }
+});
+
+function toggleCollapse(i) {
+  datasets[i].collapsed = !datasets[i].collapsed;
   renderDatasets();
 }
 
@@ -97,6 +109,7 @@ function importCSV(event, i) {
       return { date: (date || '').trim(), value: Number(value) };
     }).filter(r => r.date);
     datasets[i].entries = entries;
+    datasets[i].collapsed = true; // Collapse after import
     renderDatasets();
     event.target.value = '';
   };
@@ -147,76 +160,119 @@ function drawChart(i) {
   updateStats(i, sorted);
 }
 
-function drawBarChart(i, sorted) {
-    const ctx = document.getElementById(`bar-${i}`).getContext('2d');
-    if (datasets[i].barChart) datasets[i].barChart.destroy();
+const deltaArrowsPlugin = {
+  id: 'deltaArrows',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    const data = chart.data.datasets[0]?.data || [];
+    if (!meta || !meta.data?.length) return;
 
-    /* якщо даних немає – нічого не малюємо */
-    if (!sorted.length) return;
+    // Use the x scale bottom instead of chartArea.bottom
+    const xScale = chart.scales[meta.xAxisID || meta.xScaleID || 'x'];
+    if (!xScale) return;
+    const baseY = xScale.bottom + 4; // push arrows below tick labels
 
-    /* групування споживання за місяцями */
-    const monthTotals = {};
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = '12px Arial';
 
-    /* перетворюємо рядки у Date‑об’єкти один раз, щоб не парсити кілька разів */
-    const entries = sorted.map(e => ({
-      date: new Date(e.date),
-      day: e.date.slice(8, 10),
-      month: e.date.slice(0, 7),          // "YYYY-MM"
-      value: e.value
-    }));
+    for (let i = 1; i < data.length; i++) {
+      const curr = Number(data[i]);
+      const prev = Number(data[i - 1]);
+      const el = meta.data[i];
+      if (!el) continue;
 
-    /* розраховуємо споживання між кожною парою вимірювань */
-    for (let k = 0; k < entries.length - 1; k++) {
-      const a = entries[k];
-      const b = entries[k + 1];
-      const diff = b.value - a.value;                      // споживання за проміжок
-      const days = (b.date - a.date) / (24 * 60 * 60 * 1000); // кількість днів між вимірюваннями
-      if (days <= 0) continue;                             // пропускаємо некоректні дані
+      let label = '—';
+      let color = '#999';
 
-      /* якщо вимірювання попадають у один і той самий місяць – просто додаємо споживання */
-      if (a.month === b.month) {
-        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff;
-      } else {
-        /* простий розподіл між двома місяцями (пропорційно кількості днів у кожному місяці) */
-        const firstMonthDays = new Date(a.month + '-01').setMonth(new Date(a.month).getMonth() + 1) - a.date;
-        const firstMonthDaysCnt = firstMonthDays / (24 * 60 * 60 * 1000);
-        const secondMonthDaysCnt = days - firstMonthDaysCnt;
-
-        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
-        monthTotals[b.month] = (monthTotals[b.month] || 0) + diff * (secondMonthDaysCnt / days);
+      if (isFinite(curr) && isFinite(prev) && prev !== 0) {
+        const pct = ((curr - prev) / prev) * 100;
+        const up = pct >= 0;
+        const arrow = up ? '↑' : '↓';
+        color = up ? '#e74c3c' : '#2ecc71';
+        label = `${arrow} ${pct >= 0 ? '+' : ''}${Math.round(pct)}%`;
       }
+
+      ctx.fillStyle = color;
+      ctx.fillText(label, el.x, baseY);
     }
 
-    const labels = Object.keys(monthTotals).sort();
-    const data = labels.map(m => monthTotals[m]);
-
-    datasets[i].barChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Споживання за місяць (графік 1–30)',
-          data,
-          backgroundColor: 'rgba(75,192,192,0.6)'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { grid: { color: '#2b2b2b' } },
-          y: { grid: { color: '#2b2b2b' } }
-        },
-        plugins: { legend: { labels: { color: '#ddd' } } }
-      }
-    });
+    ctx.restore();
   }
-  
+};
+
+function drawBarChart(i, sorted) {
+  const ctx = document.getElementById(`bar-${i}`).getContext('2d');
+  if (datasets[i].barChart) datasets[i].barChart.destroy();
+  if (!sorted.length) return;
+
+  const monthTotals = {};
+  const entries = sorted.map(e => ({
+    date: new Date(e.date),
+    day: e.date.slice(8, 10),
+    month: e.date.slice(0, 7),
+    value: e.value
+  }));
+
+  for (let k = 0; k < entries.length - 1; k++) {
+    const a = entries[k];
+    const b = entries[k + 1];
+    const diff = b.value - a.value;
+    const days = (b.date - a.date) / (24 * 60 * 60 * 1000);
+    if (days <= 0) continue;
+
+    if (a.month === b.month) {
+      monthTotals[a.month] = (monthTotals[a.month] || 0) + diff;
+    } else {
+      const monthStart = new Date(a.month + '-01');
+      const nextMonthStart = new Date(monthStart);
+      nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+      const firstMonthDaysCnt = (nextMonthStart - a.date) / (24 * 60 * 60 * 1000);
+      const secondMonthDaysCnt = days - firstMonthDaysCnt;
+
+      monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
+      monthTotals[b.month] = (monthTotals[b.month] || 0) + diff * (secondMonthDaysCnt / days);
+    }
+  }
+
+  const labels = Object.keys(monthTotals).sort();
+  const data = labels.map(m => monthTotals[m]);
+
+  datasets[i].barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Споживання за місяць (графік 1–30)',
+        data,
+        backgroundColor: 'rgba(75,192,192,0.6)'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { bottom: 15 } }, // more room for arrows
+      scales: {
+        x: {
+          grid: { color: '#2b2b2b' },
+          ticks: { padding: 5 } // optional small gap between axis and labels
+        },
+        y: { grid: { color: '#2b2b2b' } }
+      },
+      plugins: { legend: { labels: { color: '#ddd' } } }
+    },
+        plugins: [deltaArrowsPlugin] // attach plugin
+  });
+}
+
 function updateStats(i, sorted) {
   const statsBox = document.getElementById(`stats-${i}`);
   if (!sorted.length) { statsBox.innerHTML = ''; return; }
   const total = sorted[sorted.length-1].value - sorted[0].value;
-  statsBox.innerHTML = `Сумарний приріст: ${total}`;
+  const rounded = Math.round(total); // or: Number(total.toFixed(2))
+  statsBox.innerHTML = `Сумарний приріст: ${rounded}`;
 }
 
 function renderDatasets() {
@@ -227,29 +283,32 @@ function renderDatasets() {
     card.className = 'dataset';
     card.innerHTML = `
       <h2>${ds.name}</h2>
-      <table>
-        <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
-        <tbody>
-          ${ds.entries.map((e,j) => `
-            <tr>
-              <td>${j+1}</td>
-              <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
-              <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
-              <td class="controls">
-                <button onclick="moveEntry(${i},${j},-1)">↑</button>
-                <button onclick="moveEntry(${i},${j},1)">↓</button>
-                <button onclick="deleteEntry(${i},${j})">Видалити</button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
-      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
-        <button onclick="addEntry(${i})">Додати рядок</button>
-        <button onclick="exportCSV(${i})">Експорт CSV</button>
-        <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer;">
-          <span style="padding:6px 10px; background:var(--btn); border:1px solid var(--muted); border-radius:4px;">Імпорт CSV</span>
-          <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
-        </label>
+      <button onclick="toggleCollapse(${i})">${ds.collapsed ? 'Розгорнути' : 'Згорнути'}</button>
+      <div style="display:${ds.collapsed ? 'none' : 'block'};">
+        <table>
+          <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
+          <tbody>
+            ${ds.entries.map((e,j) => `
+              <tr>
+                <td>${j+1}</td>
+                <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
+                <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
+                <td class="controls">
+                  <button onclick="moveEntry(${i},${j},-1)">↑</button>
+                  <button onclick="moveEntry(${i},${j},1)">↓</button>
+                  <button onclick="deleteEntry(${i},${j})">Видалити</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
+          <button onclick="addEntry(${i})">Додати рядок</button>
+          <button onclick="exportCSV(${i})">Експорт CSV</button>
+          <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer;">
+            <span style="padding:6px 10px; background:var(--btn); border:1px solid var(--muted); border-radius:4px;">Імпорт CSV</span>
+            <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
+          </label>
+        </div>
       </div>
       <div class="stats" id="stats-${i}"></div>
       <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
