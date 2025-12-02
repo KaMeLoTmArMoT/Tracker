@@ -129,35 +129,141 @@ function drawChart(i) {
   if (datasets[i].chart) datasets[i].chart.destroy();
 
   const sorted = [...datasets[i].entries].filter(e => e.date).sort((a,b) => new Date(a.date) - new Date(b.date));
-  const points = sorted.map(e => ({ x: e.date, y: e.value }));
 
-  let xMin, xMax, unit = 'day', yMin;
-  if (sorted.length) {
-    const min = new Date(sorted[0].date);
-    const max = new Date(sorted[sorted.length - 1].date);
-    unit = pickTimeUnit(min, max);
-    const pad = 12 * 60 * 60 * 1000;
-    xMin = new Date(min.getTime() - pad);
-    xMax = new Date(max.getTime() + pad);
-    yMin = Math.min(...sorted.map(e=>e.value)) * 0.95;
-  }
+  if (!sorted.length) return;
+
+  // Color palette for years
+  const yearColors = [
+    '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
+    '#9b59b6', '#1abc9c', '#e67e22', '#34495e',
+    '#16a085', '#c0392b', '#2980b9', '#8e44ad'
+  ];
+
+  // Group entries by year
+  const yearGroups = {};
+  sorted.forEach(e => {
+    const year = e.date.slice(0, 4);
+    if (!yearGroups[year]) yearGroups[year] = [];
+    yearGroups[year].push(e);
+  });
+
+  const years = Object.keys(yearGroups).sort();
+  const chartDatasets = [];
+  const yearBaselines = {}; // Store baseline for stats calculation
+
+  // Reference year for overlaying (we'll normalize all dates to 2000)
+  const REFERENCE_YEAR = 2000;
+
+  // Calculate baseline for each year and create datasets
+  years.forEach((year, yearIndex) => {
+    let baseline = 0;
+
+    if (yearIndex === 0) {
+      // First year: use first entry as baseline
+      baseline = yearGroups[year][0].value;
+    } else {
+      // Subsequent years: interpolate Jan 1 value from previous year's last entry
+      const prevYear = years[yearIndex - 1];
+      const prevYearEntries = yearGroups[prevYear];
+      const lastPrevEntry = prevYearEntries[prevYearEntries.length - 1];
+      const firstCurrEntry = yearGroups[year][0];
+
+      const lastPrevDate = new Date(lastPrevEntry.date);
+      const firstCurrDate = new Date(firstCurrEntry.date);
+      const jan1 = new Date(`${year}-01-01`);
+
+      // Interpolate value at Jan 1
+      const totalDays = (firstCurrDate - lastPrevDate) / (24 * 60 * 60 * 1000);
+      const daysToJan1 = (jan1 - lastPrevDate) / (24 * 60 * 60 * 1000);
+
+      if (totalDays > 0 && daysToJan1 >= 0) {
+        const rate = (firstCurrEntry.value - lastPrevEntry.value) / totalDays;
+        baseline = lastPrevEntry.value + (rate * daysToJan1);
+      } else {
+        baseline = firstCurrEntry.value;
+      }
+    }
+
+    yearBaselines[year] = baseline;
+
+    // Create dataset for this year with zeroed values
+    // Normalize dates to reference year (keep only month-day)
+    const points = yearGroups[year].map(e => {
+      const monthDay = e.date.slice(5); // Get MM-DD
+      return {
+        x: `${REFERENCE_YEAR}-${monthDay}`,
+        y: e.value - baseline
+      };
+    });
+
+    // Add Jan 1 point at 0 for visual consistency
+    points.unshift({ x: `${REFERENCE_YEAR}-01-01`, y: 0 });
+
+    chartDatasets.push({
+      label: year,
+      data: points,
+      borderColor: yearColors[yearIndex % yearColors.length],
+      backgroundColor: yearColors[yearIndex % yearColors.length],
+      fill: false,
+      tension: 0.15,
+      pointRadius: 3,
+      borderWidth: 2,
+      spanGaps: false
+    });
+  });
+
+  // Set x-axis to span Jan 1 to Dec 31 of reference year
+  const xMin = new Date(`${REFERENCE_YEAR}-01-01`);
+  const xMax = new Date(`${REFERENCE_YEAR}-12-31`);
 
   datasets[i].chart = new Chart(ctx, {
     type: 'line',
-    data: { datasets: [{ label: datasets[i].name, data: points, borderColor: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), fill: false, tension: 0.15, pointRadius: 3 }] },
+    data: { datasets: chartDatasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        x: { type: 'time', time: { unit }, min: xMin, max: xMax, grid: { color: '#2b2b2b' } },
-        y: { beginAtZero: false, min: yMin, grid: { color: '#2b2b2b' } }
+        x: {
+          type: 'time',
+          time: {
+            unit: 'month',
+            displayFormats: {
+              month: 'MMM'
+            }
+          },
+          min: xMin,
+          max: xMax,
+          grid: { color: '#2b2b2b' },
+          title: { display: true, text: 'Місяць', color: '#ddd' }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: '#2b2b2b' },
+          title: { display: true, text: 'Відносне споживання', color: '#ddd' }
+        }
       },
-      plugins: { legend: { labels: { color: '#ddd' } } }
+      plugins: {
+        legend: {
+          labels: { color: '#ddd', font: { size: 12 } },
+          display: true
+        },
+        tooltip: {
+          callbacks: {
+            title: function(context) {
+              // Show actual month/day in tooltip
+              const date = new Date(context[0].parsed.x);
+              const month = date.toLocaleString('uk-UA', { month: 'long' });
+              const day = date.getDate();
+              return `${day} ${month}`;
+            }
+          }
+        }
+      }
     }
   });
 
   drawBarChart(i, sorted);
-  updateStats(i, sorted);
+  updateStats(i, sorted, yearGroups, yearBaselines);
 }
 
 const deltaArrowsPlugin = {
@@ -204,75 +310,168 @@ const deltaArrowsPlugin = {
 };
 
 function drawBarChart(i, sorted) {
-  const ctx = document.getElementById(`bar-${i}`).getContext('2d');
-  if (datasets[i].barChart) datasets[i].barChart.destroy();
+  const barContainer = document.getElementById(`bar-container-${i}`);
+  if (!barContainer) return;
+
+  // Clear existing charts
+  barContainer.innerHTML = '';
   if (!sorted.length) return;
 
-  const monthTotals = {};
-  const entries = sorted.map(e => ({
-    date: new Date(e.date),
-    day: e.date.slice(8, 10),
-    month: e.date.slice(0, 7),
-    value: e.value
-  }));
+  // Color palette (same as line chart)
+  const yearColors = [
+    '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
+    '#9b59b6', '#1abc9c', '#e67e22', '#34495e',
+    '#16a085', '#c0392b', '#2980b9', '#8e44ad'
+  ];
 
-  for (let k = 0; k < entries.length - 1; k++) {
-    const a = entries[k];
-    const b = entries[k + 1];
-    const diff = b.value - a.value;
-    const days = (b.date - a.date) / (24 * 60 * 60 * 1000);
-    if (days <= 0) continue;
+  // Group by year
+  const yearGroups = {};
+  sorted.forEach(e => {
+    const year = e.date.slice(0, 4);
+    if (!yearGroups[year]) yearGroups[year] = [];
+    yearGroups[year].push(e);
+  });
 
-    if (a.month === b.month) {
-      monthTotals[a.month] = (monthTotals[a.month] || 0) + diff;
-    } else {
-      const monthStart = new Date(a.month + '-01');
-      const nextMonthStart = new Date(monthStart);
-      nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
-      const firstMonthDaysCnt = (nextMonthStart - a.date) / (24 * 60 * 60 * 1000);
-      const secondMonthDaysCnt = days - firstMonthDaysCnt;
+  const years = Object.keys(yearGroups).sort().reverse(); // newest first
 
-      monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
-      monthTotals[b.month] = (monthTotals[b.month] || 0) + diff * (secondMonthDaysCnt / days);
+  // Create a bar chart for each year
+  years.forEach((year, yearIndex) => {
+    const yearEntries = yearGroups[year];
+    const entries = yearEntries.map(e => ({
+      date: new Date(e.date),
+      day: e.date.slice(8, 10),
+      month: e.date.slice(0, 7),
+      value: e.value
+    }));
+
+    // Calculate monthly consumption
+    const monthTotals = {};
+    for (let k = 0; k < entries.length - 1; k++) {
+      const a = entries[k];
+      const b = entries[k + 1];
+      const diff = b.value - a.value;
+      const days = (b.date - a.date) / (24 * 60 * 60 * 1000);
+      if (days <= 0) continue;
+
+      if (a.month === b.month) {
+        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff;
+      } else {
+        const monthStart = new Date(a.month + '-01');
+        const nextMonthStart = new Date(monthStart);
+        nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
+        const firstMonthDaysCnt = (nextMonthStart - a.date) / (24 * 60 * 60 * 1000);
+        const secondMonthDaysCnt = days - firstMonthDaysCnt;
+
+        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
+        monthTotals[b.month] = (monthTotals[b.month] || 0) + diff * (secondMonthDaysCnt / days);
+      }
     }
-  }
 
-  const labels = Object.keys(monthTotals).sort();
-  const data = labels.map(m => monthTotals[m]);
+    const labels = Object.keys(monthTotals).filter(m => m.startsWith(year)).sort();
+    const data = labels.map(m => monthTotals[m]);
 
-  datasets[i].barChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Споживання за місяць (графік 1–30)',
-        data,
-        backgroundColor: 'rgba(75,192,192,0.6)'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: { padding: { bottom: 15 } }, // more room for arrows
-      scales: {
-        x: {
-          grid: { color: '#2b2b2b' },
-          ticks: { padding: 5 } // optional small gap between axis and labels
-        },
-        y: { grid: { color: '#2b2b2b' } }
+    // Calculate total for year
+    const yearTotal = data.reduce((sum, val) => sum + val, 0);
+
+    // Get color for this year (reverse index since years are reversed)
+    const colorIndex = years.length - 1 - yearIndex;
+    const yearColor = yearColors[colorIndex % yearColors.length];
+
+    // Create year section
+    const yearSection = document.createElement('div');
+    yearSection.style.marginTop = '15px';
+    yearSection.style.borderLeft = `4px solid ${yearColor}`;
+    yearSection.style.paddingLeft = '10px';
+
+    // Year header
+    const yearHeader = document.createElement('div');
+    yearHeader.style.marginBottom = '8px';
+    yearHeader.style.display = 'flex';
+    yearHeader.style.justifyContent = 'space-between';
+    yearHeader.style.alignItems = 'center';
+
+    yearHeader.innerHTML = `
+      <span style="font-weight:bold; color:${yearColor}; font-size:16px">
+        ${year}
+      </span>
+      <span style="color:#aaa">
+        Всього: <strong style="color:${yearColor}">${Math.round(yearTotal)}</strong>
+      </span>
+    `;
+
+    // Chart container
+    const chartWrap = document.createElement('div');
+    chartWrap.style.position = 'relative';
+    chartWrap.style.width = '100%';
+    chartWrap.style.height = '200px';
+
+    const canvas = document.createElement('canvas');
+    canvas.id = `bar-${i}-${year}`;
+    chartWrap.appendChild(canvas);
+
+    yearSection.appendChild(yearHeader);
+    yearSection.appendChild(chartWrap);
+    barContainer.appendChild(yearSection);
+
+    // Draw chart
+    const ctx = canvas.getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels.map(m => m.slice(5)), // Show only MM
+        datasets: [{
+          label: `Споживання ${year}`,
+          data,
+          backgroundColor: `${yearColor}AA`
+        }]
       },
-      plugins: { legend: { labels: { color: '#ddd' } } }
-    },
-        plugins: [deltaArrowsPlugin] // attach plugin
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { bottom: 15 } },
+        scales: {
+          x: {
+            grid: { color: '#2b2b2b' },
+            ticks: { padding: 5, color: '#ddd' }
+          },
+          y: {
+            grid: { color: '#2b2b2b' },
+            ticks: { color: '#ddd' }
+          }
+        },
+        plugins: {
+          legend: {
+            display: false
+          }
+        }
+      },
+      plugins: [deltaArrowsPlugin]
+    });
   });
 }
 
-function updateStats(i, sorted) {
+function updateStats(i, sorted, yearGroups, yearBaselines) {
   const statsBox = document.getElementById(`stats-${i}`);
   if (!sorted.length) { statsBox.innerHTML = ''; return; }
-  const total = sorted[sorted.length-1].value - sorted[0].value;
-  const rounded = Math.round(total); // or: Number(total.toFixed(2))
-  statsBox.innerHTML = `Сумарний приріст: ${rounded}`;
+
+  const years = Object.keys(yearGroups).sort();
+  let statsHTML = '';
+
+  // Per-year stats
+  years.forEach((year, idx) => {
+    const yearEntries = yearGroups[year];
+    const firstVal = yearEntries[0].value;
+    const lastVal = yearEntries[yearEntries.length - 1].value;
+    const yearGrowth = lastVal - yearBaselines[year];
+
+    statsHTML += `<strong>${year}:</strong> ${Math.round(yearGrowth)} | `;
+  });
+
+  // Total growth
+  const totalGrowth = sorted[sorted.length - 1].value - sorted[0].value;
+  statsHTML += `<strong>Всього:</strong> ${Math.round(totalGrowth)}`;
+
+  statsBox.innerHTML = statsHTML;
 }
 
 function renderDatasets() {
@@ -312,7 +511,7 @@ function renderDatasets() {
       </div>
       <div class="stats" id="stats-${i}"></div>
       <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
-      <div class="chart-wrap" style="height:250px"><canvas id="bar-${i}"></canvas></div>
+      <div id="bar-container-${i}"></div>
     `;
     host.appendChild(card);
     drawChart(i);
