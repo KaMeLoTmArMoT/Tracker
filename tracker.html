@@ -30,6 +30,77 @@
     .controls button { margin: 0 2px; }
     .stats { margin: 8px 0; padding: 6px; background: #222; border-radius: 6px; font-size: 14px; }
     @media (max-width: 768px) { th, td { font-size: 12px; } .chart-wrap { height: 260px; } }
+    .action-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      align-items: center;
+    }
+
+    .btn-add-row {
+      width: 100%;
+      padding: 10px;
+      background: #2a2a2a;
+      border: 2px dashed var(--muted);
+      color: #888;
+      font-size: 20px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+      margin-top: 5px;
+    }
+
+    .btn-add-row:hover {
+      background: #333;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-export {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      padding: 8px 16px;
+      color: #fff;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-export:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-import {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      border: none;
+      padding: 8px 16px;
+      color: #fff;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-import:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
+    }
+
+    .btn-toggle {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      border: none;
+      padding: 8px 16px;
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .btn-toggle:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -482,7 +553,9 @@ function renderDatasets() {
     card.className = 'dataset';
     card.innerHTML = `
       <h2>${ds.name}</h2>
-      <button onclick="toggleCollapse(${i})">${ds.collapsed ? 'Розгорнути' : 'Згорнути'}</button>
+      <button class="btn-toggle" onclick="toggleCollapse(${i})">
+        ${ds.collapsed ? '📊 Розгорнути' : '📋 Згорнути'}
+      </button>
       <div style="display:${ds.collapsed ? 'none' : 'block'};">
         <table>
           <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
@@ -493,18 +566,22 @@ function renderDatasets() {
                 <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
                 <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
                 <td class="controls">
-                  <button onclick="moveEntry(${i},${j},-1)">↑</button>
-                  <button onclick="moveEntry(${i},${j},1)">↓</button>
-                  <button onclick="deleteEntry(${i},${j})">Видалити</button>
+                  <button onclick="moveEntry(${i},${j},-1)" title="Вгору">↑</button>
+                  <button onclick="moveEntry(${i},${j},1)" title="Вниз">↓</button>
+                  <button onclick="deleteEntry(${i},${j})" title="Видалити">🗑️</button>
                 </td>
               </tr>`).join('')}
           </tbody>
         </table>
-        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap: wrap;">
-          <button onclick="addEntry(${i})">Додати рядок</button>
-          <button onclick="exportCSV(${i})">Експорт CSV</button>
-          <label style="display:inline-flex; align-items:center; gap:.5rem; cursor:pointer;">
-            <span style="padding:6px 10px; background:var(--btn); border:1px solid var(--muted); border-radius:4px;">Імпорт CSV</span>
+        <button class="btn-add-row" onclick="addEntry(${i})" title="Додати новий рядок">
+          + Додати рядок
+        </button>
+        <div class="action-buttons">
+          <button class="btn-export" onclick="exportCSV(${i})">
+            📥 Експорт CSV
+          </button>
+          <label style="display:inline-flex; cursor:pointer;">
+            <span class="btn-import">📤 Імпорт CSV</span>
             <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
           </label>
         </div>
