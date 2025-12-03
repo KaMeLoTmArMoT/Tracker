@@ -28,8 +28,68 @@
     .chart-wrap { position: relative; width: 100%; height: 400px; margin-top: 10px; }
     canvas { width: 100% !important; height: 100% !important; display: block; }
     .controls button { margin: 0 2px; }
-    .stats { margin: 8px 0; padding: 6px; background: #222; border-radius: 6px; font-size: 14px; }
-    @media (max-width: 768px) { th, td { font-size: 12px; } .chart-wrap { height: 260px; } }
+    .stats {
+      margin: 8px 0;
+      padding: 12px 16px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      font-size: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #2a2a2a;
+    }
+    .stats-year {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #252525;
+      border-radius: 6px;
+      border-left: 3px solid;
+    }
+    .stats-year-label {
+      font-size: 13px;
+      opacity: 0.8;
+    }
+    .stats-year-value {
+      font-weight: bold;
+      font-size: 15px;
+    }
+    .stats-separator {
+      width: 1px;
+      height: 20px;
+      background: var(--muted);
+      margin: 0 4px;
+    }
+    .stats-total {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%);
+      border: 1px solid #667eea44;
+      border-radius: 6px;
+      margin-left: auto;
+    }
+    .stats-total-label {
+      font-size: 13px;
+      color: #9b9b9b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stats-total-value {
+      font-weight: bold;
+      font-size: 16px;
+      color: #667eea;
+    }
+    @media (max-width: 768px) {
+      th, td { font-size: 12px; }
+      .chart-wrap { height: 260px; }
+      .stats { font-size: 12px; }
+      .stats-total { margin-left: 0; width: 100%; }
+    }
     .action-buttons {
       display: flex;
       gap: 10px;
@@ -334,7 +394,7 @@ function drawChart(i) {
   });
 
   drawBarChart(i, sorted);
-  updateStats(i, sorted, yearGroups, yearBaselines);
+  updateStats(i, sorted, yearGroups, yearBaselines, yearColors);
 }
 
 const deltaArrowsPlugin = {
@@ -534,26 +594,42 @@ function drawBarChart(i, sorted) {
   });
 }
 
-function updateStats(i, sorted, yearGroups, yearBaselines) {
+function updateStats(i, sorted, yearGroups, yearBaselines, yearColors) {
   const statsBox = document.getElementById(`stats-${i}`);
   if (!sorted.length) { statsBox.innerHTML = ''; return; }
 
   const years = Object.keys(yearGroups).sort();
   let statsHTML = '';
 
-  // Per-year stats
+  // Per-year stats with color coding
   years.forEach((year, idx) => {
     const yearEntries = yearGroups[year];
     const firstVal = yearEntries[0].value;
     const lastVal = yearEntries[yearEntries.length - 1].value;
     const yearGrowth = lastVal - yearBaselines[year];
+    const yearColor = yearColors[idx % yearColors.length];
 
-    statsHTML += `<strong>${year}:</strong> ${Math.round(yearGrowth)} | `;
+    statsHTML += `
+      <div class="stats-year" style="border-left-color: ${yearColor};">
+        <span class="stats-year-label">${year}</span>
+        <span class="stats-year-value" style="color: ${yearColor};">${Math.round(yearGrowth)}</span>
+      </div>
+    `;
   });
+
+  // Add separator
+  if (years.length > 0) {
+    statsHTML += '<div class="stats-separator"></div>';
+  }
 
   // Total growth
   const totalGrowth = sorted[sorted.length - 1].value - sorted[0].value;
-  statsHTML += `<strong>Total:</strong> ${Math.round(totalGrowth)}`;
+  statsHTML += `
+    <div class="stats-total">
+      <span class="stats-total-label">Total</span>
+      <span class="stats-total-value">${Math.round(totalGrowth)}</span>
+    </div>
+  `;
 
   statsBox.innerHTML = statsHTML;
 }
