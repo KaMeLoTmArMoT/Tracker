@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Споживання по категоріях</title>
+  <title>Consumption by Categories</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
   <style>
@@ -105,11 +105,11 @@
 </head>
 <body>
 <div class="container">
-  <h1>Споживання по категоріях</h1>
+  <h1>Consumption by Categories</h1>
   <div id="datasets"></div>
   <div>
-    <input type="text" id="newCategory" placeholder="Назва нової категорії (напр. Газ)" />
-    <button onclick="addDataset()">Додати категорію</button>
+    <input type="text" id="newCategory" placeholder="New category name (e.g. Gas)" />
+    <button onclick="addDataset()">Add Category</button>
   </div>
 </div>
 
@@ -305,12 +305,12 @@ function drawChart(i) {
           min: xMin,
           max: xMax,
           grid: { color: '#2b2b2b' },
-          title: { display: true, text: 'Місяць', color: '#ddd' }
+          title: { display: true, text: 'Month', color: '#ddd' }
         },
         y: {
           beginAtZero: true,
           grid: { color: '#2b2b2b' },
-          title: { display: true, text: 'Відносне споживання', color: '#ddd' }
+          title: { display: true, text: 'Relative Consumption', color: '#ddd' }
         }
       },
       plugins: {
@@ -323,7 +323,7 @@ function drawChart(i) {
             title: function(context) {
               // Show actual month/day in tooltip
               const date = new Date(context[0].parsed.x);
-              const month = date.toLocaleString('uk-UA', { month: 'long' });
+              const month = date.toLocaleString('en-US', { month: 'long' });
               const day = date.getDate();
               return `${day} ${month}`;
             }
@@ -417,6 +417,13 @@ function drawBarChart(i, sorted) {
 
     // Calculate monthly consumption
     const monthTotals = {};
+
+    // Initialize all 12 months with 0
+    for (let m = 1; m <= 12; m++) {
+      const monthKey = `${year}-${String(m).padStart(2, '0')}`;
+      monthTotals[monthKey] = 0;
+    }
+
     for (let k = 0; k < entries.length - 1; k++) {
       const a = entries[k];
       const b = entries[k + 1];
@@ -438,8 +445,14 @@ function drawBarChart(i, sorted) {
       }
     }
 
-    const labels = Object.keys(monthTotals).filter(m => m.startsWith(year)).sort();
-    const data = labels.map(m => monthTotals[m]);
+    // Always show months 01-12 in order
+    const labels = [];
+    const data = [];
+    for (let m = 1; m <= 12; m++) {
+      const monthKey = `${year}-${String(m).padStart(2, '0')}`;
+      labels.push(String(m).padStart(2, '0'));
+      data.push(monthTotals[monthKey] || 0);
+    }
 
     // Calculate total for year
     const yearTotal = data.reduce((sum, val) => sum + val, 0);
@@ -466,7 +479,7 @@ function drawBarChart(i, sorted) {
         ${year}
       </span>
       <span style="color:#aaa">
-        Всього: <strong style="color:${yearColor}">${Math.round(yearTotal)}</strong>
+        Total: <strong style="color:${yearColor}">${Math.round(yearTotal)}</strong>
       </span>
     `;
 
@@ -489,9 +502,9 @@ function drawBarChart(i, sorted) {
     new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: labels.map(m => m.slice(5)), // Show only MM
+        labels: labels,
         datasets: [{
-          label: `Споживання ${year}`,
+          label: `Consumption ${year}`,
           data,
           backgroundColor: `${yearColor}AA`
         }]
@@ -540,7 +553,7 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 
   // Total growth
   const totalGrowth = sorted[sorted.length - 1].value - sorted[0].value;
-  statsHTML += `<strong>Всього:</strong> ${Math.round(totalGrowth)}`;
+  statsHTML += `<strong>Total:</strong> ${Math.round(totalGrowth)}`;
 
   statsBox.innerHTML = statsHTML;
 }
@@ -554,11 +567,11 @@ function renderDatasets() {
     card.innerHTML = `
       <h2>${ds.name}</h2>
       <button class="btn-toggle" onclick="toggleCollapse(${i})">
-        ${ds.collapsed ? '📊 Розгорнути' : '📋 Згорнути'}
+        ${ds.collapsed ? '📊 Expand' : '📋 Collapse'}
       </button>
       <div style="display:${ds.collapsed ? 'none' : 'block'};">
         <table>
-          <thead><tr><th>#</th><th>Дата</th><th>Значення</th><th>Дії</th></tr></thead>
+          <thead><tr><th>#</th><th>Date</th><th>Value</th><th>Actions</th></tr></thead>
           <tbody>
             ${ds.entries.map((e,j) => `
               <tr>
@@ -566,22 +579,22 @@ function renderDatasets() {
                 <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
                 <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
                 <td class="controls">
-                  <button onclick="moveEntry(${i},${j},-1)" title="Вгору">↑</button>
-                  <button onclick="moveEntry(${i},${j},1)" title="Вниз">↓</button>
-                  <button onclick="deleteEntry(${i},${j})" title="Видалити">🗑️</button>
+                  <button onclick="moveEntry(${i},${j},-1)" title="Move Up">↑</button>
+                  <button onclick="moveEntry(${i},${j},1)" title="Move Down">↓</button>
+                  <button onclick="deleteEntry(${i},${j})" title="Delete">🗑️</button>
                 </td>
               </tr>`).join('')}
           </tbody>
         </table>
-        <button class="btn-add-row" onclick="addEntry(${i})" title="Додати новий рядок">
-          + Додати рядок
+        <button class="btn-add-row" onclick="addEntry(${i})" title="Add new row">
+          + Add Row
         </button>
         <div class="action-buttons">
           <button class="btn-export" onclick="exportCSV(${i})">
-            📥 Експорт CSV
+            📥 Export CSV
           </button>
           <label style="display:inline-flex; cursor:pointer;">
-            <span class="btn-import">📤 Імпорт CSV</span>
+            <span class="btn-import">📤 Import CSV</span>
             <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
           </label>
         </div>
