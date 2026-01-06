@@ -1,188 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Consumption by Categories</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
-  <style>
-    :root {
-      --bg: #111;
-      --panel: #1a1a1a;
-      --text: #eee;
-      --muted: #444;
-      --btn: #555;
-      --btn-hover: #777;
-      --accent: rgb(75,192,192);
-    }
-    body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-    .container { max-width: 1200px; margin: auto; }
-    .dataset { border: 1px solid var(--muted); border-radius: 8px; padding: 15px; margin-bottom: 25px; background: var(--panel); }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid var(--muted); padding: 8px; text-align: center; }
-    input, button { padding: 8px 16px; margin: 2px; border-radius: 4px; border: 1px solid var(--muted); }
-    input[type="date"], input[type="number"], input[type="text"] { background: #222; color: var(--text); }
-    button {
-      cursor: pointer;
-      background: var(--btn);
-      color: #fff;
-      font-weight: 500;
-      border: none;
-      transition: all 0.2s;
-    }
-    button:hover {
-      background: var(--btn-hover);
-      transform: translateY(-1px);
-    }
-    .chart-wrap { position: relative; width: 100%; height: 400px; margin-top: 10px; }
-    canvas { width: 100% !important; height: 100% !important; display: block; }
-    .controls button { margin: 0 2px; padding: 6px 10px; }
-    .stats { margin: 8px 0; padding: 6px; background: #222; border-radius: 6px; font-size: 14px; }
-    @media (max-width: 768px) { th, td { font-size: 12px; } .chart-wrap { height: 260px; } }
-
-    .header-controls {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
-    }
-
-    .action-buttons {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-      align-items: center;
-    }
-
-    .btn-add-row {
-      width: 100%;
-      padding: 10px;
-      background: #2a2a2a;
-      border: 2px dashed var(--muted);
-      color: #888;
-      font-size: 20px;
-      cursor: pointer;
-      border-radius: 6px;
-      transition: all 0.2s;
-      margin-top: 5px;
-    }
-
-    .btn-add-row:hover {
-      background: #333;
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .btn-export {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      border: none;
-      padding: 8px 16px;
-      color: #fff;
-      font-weight: 500;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-export:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-import {
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-      border: none;
-      padding: 8px 16px;
-      color: #fff;
-      font-weight: 500;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-import:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
-    }
-
-    .btn-toggle {
-      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-      border: none;
-      padding: 8px 16px;
-      color: #fff;
-      font-weight: 500;
-    }
-
-    .btn-toggle:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
-    }
-
-    .btn-export-chart {
-      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-      border: none;
-      padding: 8px 16px;
-      color: #fff;
-      font-weight: 500;
-      cursor: pointer;
-      border-radius: 4px;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .btn-export-chart:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(56, 239, 125, 0.4);
-    }
-
-    .btn-export-chart-small {
-      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-      border: none;
-      padding: 6px 12px;
-      color: #fff;
-      font-weight: 500;
-      font-size: 13px;
-      cursor: pointer;
-      border-radius: 4px;
-    }
-
-    .btn-export-chart-small:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(56, 239, 125, 0.4);
-    }
-  </style>
-</head>
-<body>
-<div class="container">
-  <h1>Consumption by Categories</h1>
-  <div id="datasets"></div>
-  <div>
-    <input type="text" id="newCategory" placeholder="New category name (e.g. Gas)" />
-    <button onclick="addDataset()">Add Category</button>
-  </div>
-</div>
-
-<script>
 let datasets = [];
 
 function addDataset() {
-  const name = document.getElementById('newCategory').value.trim();
+  const input = document.getElementById('newCategory');
+  const name = (input.value || '').trim();
   if (!name) return;
+
   datasets.push({ name, entries: [], chart: null, barCharts: {}, collapsed: false });
-  document.getElementById('newCategory').value = '';
+  input.value = '';
   renderDatasets();
 }
-
-document.getElementById('newCategory').addEventListener('keydown', function(event) {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    addDataset();
-  }
-});
 
 function toggleCollapse(i) {
   datasets[i].collapsed = !datasets[i].collapsed;
@@ -190,7 +16,7 @@ function toggleCollapse(i) {
 }
 
 function addEntry(i) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Date().toISOString().slice(0, 10);
   datasets[i].entries.push({ date: today, value: 0 });
   renderDatasets();
 }
@@ -207,31 +33,38 @@ function deleteEntry(i, j) {
 
 function moveEntry(i, j, dir) {
   const arr = datasets[i].entries;
-  if (dir === -1 && j > 0) [arr[j-1], arr[j]] = [arr[j], arr[j-1]];
-  if (dir === 1 && j < arr.length-1) [arr[j+1], arr[j]] = [arr[j], arr[j+1]];
+  if (dir === -1 && j > 0) [arr[j - 1], arr[j]] = [arr[j], arr[j - 1]];
+  if (dir === 1 && j < arr.length - 1) [arr[j + 1], arr[j]] = [arr[j], arr[j + 1]];
   renderDatasets();
 }
 
 function exportCSV(i) {
-  const rows = [['category','date','value'], ...datasets[i].entries.map(e => [datasets[i].name, e.date, e.value])];
+  const rows = [['category', 'date', 'value'], ...datasets[i].entries.map(e => [datasets[i].name, e.date, e.value])];
   const csv = rows.map(r => r.join(',')).join('\n');
+
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `${datasets[i].name}.csv`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 function importCSV(event, i) {
   const file = event.target.files[0];
   if (!file) return;
+
   const reader = new FileReader();
   reader.onload = (e) => {
     const lines = e.target.result.split(/\r?\n/).filter(Boolean).slice(1);
-    const entries = lines.map(line => {
-      const [category, date, value] = line.split(',');
-      return { date: (date || '').trim(), value: Number(value) };
-    }).filter(r => r.date);
+    const entries = lines
+      .map(line => {
+        const [category, date, value] = line.split(',');
+        return { date: (date || '').trim(), value: Number(value) };
+      })
+      .filter(r => r.date);
+
     datasets[i].entries = entries;
     datasets[i].collapsed = true;
     renderDatasets();
@@ -265,10 +98,15 @@ function pickTimeUnit(minDate, maxDate) {
 }
 
 function drawChart(i) {
-  const ctx = document.getElementById(`chart-${i}`).getContext('2d');
+  const canvas = document.getElementById(`chart-${i}`);
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
   if (datasets[i].chart) datasets[i].chart.destroy();
 
-  const sorted = [...datasets[i].entries].filter(e => e.date).sort((a,b) => new Date(a.date) - new Date(b.date));
+  const sorted = [...datasets[i].entries]
+    .filter(e => e.date)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   if (!sorted.length) return;
 
@@ -288,7 +126,6 @@ function drawChart(i) {
   const years = Object.keys(yearGroups).sort();
   const chartDatasets = [];
   const yearBaselines = {};
-
   const REFERENCE_YEAR = 2000;
 
   years.forEach((year, yearIndex) => {
@@ -306,8 +143,8 @@ function drawChart(i) {
       const firstCurrDate = new Date(firstCurrEntry.date);
       const jan1 = new Date(`${year}-01-01`);
 
-      const totalDays = (firstCurrDate - lastPrevDate) / (24 * 60 * 60 * 1000);
-      const daysToJan1 = (jan1 - lastPrevDate) / (24 * 60 * 60 * 1000);
+      const totalDays = (firstCurrDate - lastPrevDate) / 86400000;
+      const daysToJan1 = (jan1 - lastPrevDate) / 86400000;
 
       if (totalDays > 0 && daysToJan1 >= 0) {
         const rate = (firstCurrEntry.value - lastPrevEntry.value) / totalDays;
@@ -321,10 +158,7 @@ function drawChart(i) {
 
     const points = yearGroups[year].map(e => {
       const monthDay = e.date.slice(5);
-      return {
-        x: `${REFERENCE_YEAR}-${monthDay}`,
-        y: e.value - baseline
-      };
+      return { x: `${REFERENCE_YEAR}-${monthDay}`, y: e.value - baseline };
     });
 
     points.unshift({ x: `${REFERENCE_YEAR}-01-01`, y: 0 });
@@ -354,12 +188,7 @@ function drawChart(i) {
       scales: {
         x: {
           type: 'time',
-          time: {
-            unit: 'month',
-            displayFormats: {
-              month: 'MMM'
-            }
-          },
+          time: { unit: 'month', displayFormats: { month: 'MMM' } },
           min: xMin,
           max: xMax,
           grid: { color: '#2b2b2b' },
@@ -372,13 +201,10 @@ function drawChart(i) {
         }
       },
       plugins: {
-        legend: {
-          labels: { color: '#ddd', font: { size: 12 } },
-          display: true
-        },
+        legend: { labels: { color: '#ddd', font: { size: 12 } }, display: true },
         tooltip: {
           callbacks: {
-            title: function(context) {
+            title: function (context) {
               const date = new Date(context[0].parsed.x);
               const month = date.toLocaleString('en-US', { month: 'long' });
               const day = date.getDate();
@@ -404,6 +230,7 @@ const deltaArrowsPlugin = {
 
     const xScale = chart.scales[meta.xAxisID || meta.xScaleID || 'x'];
     if (!xScale) return;
+
     const baseY = xScale.bottom + 4;
 
     ctx.save();
@@ -464,13 +291,11 @@ function drawBarChart(i, sorted) {
     const yearEntries = yearGroups[year];
     const entries = yearEntries.map(e => ({
       date: new Date(e.date),
-      day: e.date.slice(8, 10),
       month: e.date.slice(0, 7),
       value: e.value
     }));
 
     const monthTotals = {};
-
     for (let m = 1; m <= 12; m++) {
       const monthKey = `${year}-${String(m).padStart(2, '0')}`;
       monthTotals[monthKey] = 0;
@@ -480,7 +305,7 @@ function drawBarChart(i, sorted) {
       const a = entries[k];
       const b = entries[k + 1];
       const diff = b.value - a.value;
-      const days = (b.date - a.date) / (24 * 60 * 60 * 1000);
+      const days = (b.date - a.date) / 86400000;
       if (days <= 0) continue;
 
       if (a.month === b.month) {
@@ -489,7 +314,8 @@ function drawBarChart(i, sorted) {
         const monthStart = new Date(a.month + '-01');
         const nextMonthStart = new Date(monthStart);
         nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
-        const firstMonthDaysCnt = (nextMonthStart - a.date) / (24 * 60 * 60 * 1000);
+
+        const firstMonthDaysCnt = (nextMonthStart - a.date) / 86400000;
         const secondMonthDaysCnt = days - firstMonthDaysCnt;
 
         monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
@@ -574,20 +400,10 @@ function drawBarChart(i, sorted) {
         maintainAspectRatio: false,
         layout: { padding: { bottom: 15 } },
         scales: {
-          x: {
-            grid: { color: '#2b2b2b' },
-            ticks: { padding: 5, color: '#ddd' }
-          },
-          y: {
-            grid: { color: '#2b2b2b' },
-            ticks: { color: '#ddd' }
-          }
+          x: { grid: { color: '#2b2b2b' }, ticks: { padding: 5, color: '#ddd' } },
+          y: { grid: { color: '#2b2b2b' }, ticks: { color: '#ddd' } }
         },
-        plugins: {
-          legend: {
-            display: false
-          }
-        }
+        plugins: { legend: { display: false } }
       },
       plugins: [deltaArrowsPlugin]
     });
@@ -603,12 +419,10 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
   const years = Object.keys(yearGroups).sort();
   let statsHTML = '';
 
-  years.forEach((year, idx) => {
+  years.forEach((year) => {
     const yearEntries = yearGroups[year];
-    const firstVal = yearEntries[0].value;
     const lastVal = yearEntries[yearEntries.length - 1].value;
     const yearGrowth = lastVal - yearBaselines[year];
-
     statsHTML += `<strong>${year}:</strong> ${Math.round(yearGrowth)} | `;
   });
 
@@ -621,6 +435,7 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 function renderDatasets() {
   const host = document.getElementById('datasets');
   host.innerHTML = '';
+
   datasets.forEach((ds, i) => {
     const card = document.createElement('div');
     card.className = 'dataset';
@@ -629,21 +444,22 @@ function renderDatasets() {
 
     card.innerHTML = `
       <div class="header-controls">
-        <h2 style="margin: 0; flex: 1;">${ds.name}</h2>
+        <h2 style="margin:0; flex:1;">${ds.name}</h2>
         <button class="btn-toggle" onclick="toggleCollapse(${i})">
           ${ds.collapsed ? '📊 Expand' : '📋 Collapse'}
         </button>
         ${hasData ? `<button class="btn-export-chart" onclick="exportLineChart(${i})">📸 Export Line Chart</button>` : ''}
       </div>
+
       <div style="display:${ds.collapsed ? 'none' : 'block'};">
         <table>
           <thead><tr><th>#</th><th>Date</th><th>Value</th><th>Actions</th></tr></thead>
           <tbody>
-            ${ds.entries.map((e,j) => `
+            ${ds.entries.map((e, j) => `
               <tr>
-                <td>${j+1}</td>
+                <td>${j + 1}</td>
                 <td><input type="date" value="${e.date || ''}" onchange="updateEntry(${i},${j},'date',this.value)"></td>
-                <td><input type="number" value="${isNaN(e.value)?'':e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
+                <td><input type="number" value="${isNaN(e.value) ? '' : e.value}" onchange="updateEntry(${i},${j},'value',this.value)"></td>
                 <td class="controls">
                   <button onclick="moveEntry(${i},${j},-1)" title="Move Up">↑</button>
                   <button onclick="moveEntry(${i},${j},1)" title="Move Down">↓</button>
@@ -652,29 +468,40 @@ function renderDatasets() {
               </tr>`).join('')}
           </tbody>
         </table>
-        <button class="btn-add-row" onclick="addEntry(${i})" title="Add new row">
-          + Add Row
-        </button>
+
+        <button class="btn-add-row" onclick="addEntry(${i})" title="Add new row">+ Add Row</button>
+
         <div class="action-buttons">
-          <button class="btn-export" onclick="exportCSV(${i})">
-            📥 Export CSV
-          </button>
+          <button class="btn-export" onclick="exportCSV(${i})">📥 Export CSV</button>
           <label style="display:inline-flex; cursor:pointer;">
             <span class="btn-import">📤 Import CSV</span>
             <input type="file" accept=".csv" style="display:none" onchange="importCSV(event,${i})">
           </label>
         </div>
       </div>
+
       <div class="stats" id="stats-${i}"></div>
       <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
       <div id="bar-container-${i}"></div>
     `;
+
     host.appendChild(card);
     drawChart(i);
   });
 }
 
-renderDatasets();
-</script>
-</body>
-</html>
+// init
+document.addEventListener('DOMContentLoaded', () => {
+  const addBtn = document.getElementById('addCategoryBtn');
+  const input = document.getElementById('newCategory');
+
+  addBtn.addEventListener('click', addDataset);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addDataset();
+    }
+  });
+
+  renderDatasets();
+});

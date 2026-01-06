@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Consumption by Categories</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Consumption by Categories</h1>
+
+    <div id="datasets"></div>
+
+    <div class="new-category">
+      <input type="text" id="newCategory" placeholder="New category name (e.g. Gas)" />
+      <button id="addCategoryBtn" type="button">Add Category</button>
+    </div>
+  </div>
+
+  <script defer src="./app.js"></script>
+</body>
+</html>
