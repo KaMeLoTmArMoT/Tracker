@@ -25,7 +25,7 @@ It’s designed to stay simple: CSV in/out, quick edits, and clear charts per ca
 - Date/value readings with row reorder, delete, and quick add.
 - Line chart: yearly overlay (normalized to compare years).
 - Bar charts: monthly totals per year (always months 01–12, zeros if missing).
-- PNG export for charts (line chart + per-year bar charts). [web:72]
+- PNG export for charts (line chart + per-year bar charts).
 - CSV import/export.
 - Backward-compatible CSV import (old “category,date,value” still loads).
 
@@ -33,7 +33,7 @@ It’s designed to stay simple: CSV in/out, quick edits, and clear charts per ca
 
 - Vanilla JavaScript (no build step).
 - HTML + CSS.
-- Chart.js (via CDN). [web:45]
+- Chart.js (via CDN).
 
 ## Getting Started
 
@@ -106,7 +106,7 @@ For bug reports, please include:
 
 ## License
 
-This project is licensed under the MIT License — see `LICENSE`.
+This project is licensed under the MIT License — see [`LICENSE`](https://github.com/KaMeLoTmArMoT/Tracker/blob/master/LICENSE).
 
 ## Acknowledgments
 
