@@ -1,53 +1,53 @@
 <div align="center">
-  <h3 align="center">CSV Match Cards</h3>
+  <h3 align="center">Tracker</h3>
 
   <p align="center">
-    A minimal, no-build, single-page matching game for language learning.
+    A minimal, browser-only, single-page tracker for meter/consumption readings.
     <br />
-    Import a CSV → generate cards → drag & drop to match rows.
+    Add categories → enter dated readings → see yearly overlays + monthly bar breakdowns.
     <br /><br />
-    <a href="https://kamelotmarmot.github.io/card_game/"><strong>View Demo »</strong></a>
+    <a href="https://github.com/KaMeLoTmArMoT/Tracker"><strong>View Repo »</strong></a>
     ·
-    <a href="https://github.com/KaMeLoTmArMoT/card_game/issues">Report Bug</a>
+    <a href="https://github.com/KaMeLoTmArMoT/Tracker/issues">Report Bug</a>
     ·
-    <a href="https://github.com/KaMeLoTmArMoT/card_game/issues">Request Feature</a>
+    <a href="https://github.com/KaMeLoTmArMoT/Tracker/issues">Request Feature</a>
   </p>
 </div>
 
 ## About The Project
 
-CSV Match Cards is a tiny browser-only game that turns CSV rows into draggable cards.
-The goal is to build correct groups: each group must contain cards from the same CSV row, respecting the chosen column order.
+Tracker is a tiny browser-only dashboard for tracking consumption-like counters (gas, electricity, water, etc.) over time.
+It’s designed to stay simple: CSV in/out, quick edits, and clear charts per category.
 
 ### Key Features
 
-- CSV import with preview (first 5 rows).
-- Configurable delimiter and header row detection.
-- Choose rows per round (K) and columns (2–6).
-- Drag & drop on desktop and mobile (touch).
-- “?” hint highlights sibling cards from the same CSV row for 1 second.
-- Shuffle unsolved cards.
+- Multiple categories (each category has its own table + charts).
+- Date/value readings with row reorder, delete, and quick add.
+- Line chart: yearly overlay (normalized to compare years).
+- Bar charts: monthly totals per year (always months 01–12, zeros if missing).
+- PNG export for charts (line chart + per-year bar charts). [web:72]
+- CSV import/export.
+- Backward-compatible CSV import (old “category,date,value” still loads).
 
 ### Built With
 
 - Vanilla JavaScript (no build step).
 - HTML + CSS.
-- PapaParse for CSV parsing.
-- Material Web Components (Material Design 3) via CDN import map.
+- Chart.js (via CDN). [web:45]
 
 ## Getting Started
 
 ### Prerequisites
 
 - A modern browser (Chrome/Firefox/Safari).
-- CSV exported as **UTF-8** (recommended).
+- CSV exported as UTF‑8 (recommended).
 
 ### Installation
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/KaMeLoTmArMoT/card_game.git
-   cd card_game
+   git clone https://github.com/KaMeLoTmArMoT/Tracker.git
+   cd Tracker
    ```
 
 2. Run a local static server (recommended):
@@ -61,39 +61,36 @@ The goal is to build correct groups: each group must contain cards from the same
 
 ## Usage
 
-1. Open the app (demo or local).
-2. Click **Import CSV** (or drop the file into the import dropzone).
-3. Enable “First row contains column names” if your CSV has headers.
-4. Pick delimiter if needed, then click **Apply**.
-5. Select columns (2–6), set **Rows per round (K)**, and click **Start / Restart round**.
-6. Drag cards into group slots:
-   - Green = correct group (same row + correct column order)
-   - Red = incorrect group (fix by moving cards)
+1. Open the app (local).
+2. Add a category (e.g., “Gas”).
+3. Add rows and enter readings (date + value).
+4. Use Export CSV / Import CSV to save/restore.
+5. Use “Export Line Chart” / “Export YYYY” to download PNG images.
 
 ### CSV Format
 
-Any rectangular CSV works. Each selected column becomes one card.
-Example (2 columns):
+**New format (recommended):**
 ```csv
-de,en
-Haus,house
-Baum,tree
+category,date,value,cost_per_unit,currency,unit
+gas,2025-01-01,100,0.20,EUR,m3
+gas,2025-02-01,120,0.20,EUR,m3
 ```
 
-Example (3 columns):
+**Legacy format (supported for import):**
 ```csv
-present,past,future
-go,went,will go
+category,date,value
+gas,2025-01-01,100
+gas,2025-02-01,120
 ```
 
 ## Roadmap
 
-- Move solved groups to the bottom with a short success animation.
-- Improve mobile layout for many columns (4–6).
-- Optional “tap to place” mode (non-drag alternative).
-- Export/import round state (optional).
+- Auto-save/load to localStorage.
+- Average daily/monthly consumption stats.
+- Rate periods (time ranges) + correct cost splitting across rate changes.
+- Better import UX (drag & drop zone, preview).
 
-See the [open issues](https://github.com/KaMeLoTmArMoT/card_game/issues).
+See the [open issues](https://github.com/KaMeLoTmArMoT/Tracker/issues).
 
 ## Contributing
 
@@ -109,10 +106,9 @@ For bug reports, please include:
 
 ## License
 
-This project is licensed under the MIT License — see [`LICENSE`](https://github.com/KaMeLoTmArMoT/card_game/blob/master/LICENSE).
-
+This project is licensed under the MIT License — see `LICENSE`.
 
 ## Acknowledgments
 
 - README structure inspired by Best-README-Template.
-- Built with assistance from a generative AI tools for ideation and code suggestions; all changes were reviewed and tested by the author.
+- Built with assistance from generative AI tools for ideation and code suggestions; all changes were reviewed and tested by the author.
