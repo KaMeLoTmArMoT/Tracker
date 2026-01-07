@@ -6,7 +6,7 @@
     <br />
     Add categories → enter dated readings → see yearly overlays + monthly bar breakdowns.
     <br /><br />
-    <a href="https://github.com/KaMeLoTmArMoT/Tracker"><strong>View Repo »</strong></a>
+    <a href="https://kamelotmarmot.github.io/Tracker/"><strong>View Demo »</strong></a>
     ·
     <a href="https://github.com/KaMeLoTmArMoT/Tracker/issues">Report Bug</a>
     ·
