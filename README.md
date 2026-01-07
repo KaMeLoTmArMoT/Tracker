@@ -6,11 +6,11 @@
     <br />
     Add categories → enter dated readings → see yearly overlays + monthly bar breakdowns.
     <br /><br />
-    <a href="https://kamelotmarmot.github.io/Tracker/"><strong>View Demo »</strong></a>
+    <a href="https://kamelotmarmot.github.io/ReadingsTracker/"><strong>View Demo »</strong></a>
     ·
-    <a href="https://github.com/KaMeLoTmArMoT/Tracker/issues">Report Bug</a>
+    <a href="https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues">Report Bug</a>
     ·
-    <a href="https://github.com/KaMeLoTmArMoT/Tracker/issues">Request Feature</a>
+    <a href="https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues">Request Feature</a>
   </p>
 </div>
 
@@ -46,8 +46,8 @@ It’s designed to stay simple: CSV in/out, quick edits, and clear charts per ca
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/KaMeLoTmArMoT/Tracker.git
-   cd Tracker
+   git clone https://github.com/KaMeLoTmArMoT/ReadingsTracker.git
+   cd ReadingsTracker
    ```
 
 2. Run a local static server (recommended):
@@ -90,7 +90,7 @@ gas,2025-02-01,120
 - Rate periods (time ranges) + correct cost splitting across rate changes.
 - Better import UX (drag & drop zone, preview).
 
-See the [open issues](https://github.com/KaMeLoTmArMoT/Tracker/issues).
+See the [open issues](https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues).
 
 ## Contributing
 
@@ -106,7 +106,7 @@ For bug reports, please include:
 
 ## License
 
-This project is licensed under the MIT License — see [`LICENSE`](https://github.com/KaMeLoTmArMoT/Tracker/blob/master/LICENSE).
+This project is licensed under the MIT License — see [`LICENSE`](https://github.com/KaMeLoTmArMoT/ReadingsTracker/blob/master/LICENSE).
 
 ## Acknowledgments
 
