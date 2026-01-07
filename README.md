@@ -19,6 +19,10 @@
 Tracker is a tiny browser-only dashboard for tracking consumption-like counters (gas, electricity, water, etc.) over time.
 It’s designed to stay simple: CSV in/out, quick edits, and clear charts per category.
 
+<p align="center">
+   <img src="assets/readings_example_multi_year.png" width="720" alt="Main UI">
+</p>
+
 ### Key Features
 
 - Multiple categories (each category has its own table + charts).
@@ -64,6 +68,11 @@ It’s designed to stay simple: CSV in/out, quick edits, and clear charts per ca
 1. Open the app (local).
 2. Add a category (e.g., “Gas”).
 3. Add rows and enter readings (date + value).
+
+<p align="center">
+   <img src="assets/readings_input.png" width="480" alt="Readings Input">
+</p>
+
 4. Use Export CSV / Import CSV to save/restore.
 5. Use “Export Line Chart” / “Export YYYY” to download PNG images.
 
@@ -82,6 +91,13 @@ category,date,value
 gas,2025-01-01,100
 gas,2025-02-01,120
 ```
+
+### Sample CSV
+
+- [Electricity_Multi_Year](examples/electricity_multi_year.csv)
+
+Headers:
+`category | date | value`
 
 ## Roadmap
 
