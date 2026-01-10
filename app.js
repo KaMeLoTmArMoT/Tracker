@@ -1,5 +1,7 @@
 let datasets = [];
 
+// ---------- CRUD / UI ----------
+
 function addDataset() {
   const input = document.getElementById('newCategory');
   const name = (input.value || '').trim();
@@ -89,13 +91,95 @@ function exportLineChart(i) {
   downloadChartImage(chart, `${datasets[i].name}-line.png`);
 }
 
-function pickTimeUnit(minDate, maxDate) {
-  const spanDays = (maxDate - minDate) / 86400000;
-  if (spanDays <= 7) return 'day';
-  if (spanDays <= 90) return 'week';
-  if (spanDays <= 730) return 'month';
-  return 'year';
+// ---------- Date helpers (UTC) ----------
+
+function toUTCDate(yyyyMmDd) {
+  const [y, m, d] = yyyyMmDd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
 }
+
+function yyyymm(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function daysBetweenUTC(a, b) {
+  return (b.getTime() - a.getTime()) / 86400000;
+}
+
+// allocate `amount` proportionally to days in each month that intersects [start, end)
+function allocateByMonth(startUTC, endUTC, amount, outMonthTotals) {
+  const totalDays = daysBetweenUTC(startUTC, endUTC);
+  if (!(totalDays > 0)) return;
+
+  let cursor = new Date(startUTC.getTime());
+
+  while (cursor < endUTC) {
+    const y = cursor.getUTCFullYear();
+    const m = cursor.getUTCMonth();
+
+    const monthStart = new Date(Date.UTC(y, m, 1));
+    const nextMonthStart = new Date(Date.UTC(y, m + 1, 1));
+
+    const segStart = cursor > monthStart ? cursor : monthStart;
+    const segEnd = endUTC < nextMonthStart ? endUTC : nextMonthStart;
+
+    const segDays = daysBetweenUTC(segStart, segEnd);
+    if (segDays > 0) {
+      const key = yyyymm(segStart);
+      outMonthTotals[key] = (outMonthTotals[key] || 0) + amount * (segDays / totalDays);
+    }
+
+    cursor = nextMonthStart;
+  }
+}
+
+// ---------- Line chart: add synthetic 12-31 only for "closed" years ----------
+
+function interpolateValueAt(targetDateUTC, leftEntry, rightEntry) {
+  const a = toUTCDate(leftEntry.date);
+  const b = toUTCDate(rightEntry.date);
+  const t = targetDateUTC;
+
+  const totalDays = daysBetweenUTC(a, b);
+  const leftDays = daysBetweenUTC(a, t);
+  if (!(totalDays > 0) || leftDays < 0) return leftEntry.value;
+
+  const rate = (rightEntry.value - leftEntry.value) / totalDays;
+  return leftEntry.value + rate * leftDays;
+}
+
+function addSyntheticDec31ForClosedYears(yearGroups, yearsSortedAsc) {
+  // yearsSortedAsc = ["2024","2025","2026"] etc
+  for (let idx = 0; idx < yearsSortedAsc.length - 1; idx++) {
+    const year = yearsSortedAsc[idx];
+    const nextYear = yearsSortedAsc[idx + 1];
+
+    const list = yearGroups[year];
+    const nextList = yearGroups[nextYear];
+    if (!list?.length || !nextList?.length) continue;
+
+    const hasDec31 = list.some(e => String(e.date).endsWith('-12-31'));
+    if (hasDec31) continue;
+
+    const lastThis = list[list.length - 1];
+    const firstNext = nextList[0];
+
+    const dec31UTC = new Date(Date.UTC(Number(year), 11, 31));
+    const lastThisUTC = toUTCDate(lastThis.date);
+    const firstNextUTC = toUTCDate(firstNext.date);
+
+    // Only when we really crossed into next year: lastThis < Dec31 < firstNext
+    if (lastThisUTC < dec31UTC && firstNextUTC > dec31UTC) {
+      const syntheticValue = interpolateValueAt(dec31UTC, lastThis, firstNext);
+      yearGroups[year] = [...list, { date: `${year}-12-31`, value: syntheticValue }]
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+  }
+}
+
+// ---------- Charts ----------
 
 function drawChart(i) {
   const canvas = document.getElementById(`chart-${i}`);
@@ -116,14 +200,20 @@ function drawChart(i) {
     '#16a085', '#c0392b', '#2980b9', '#8e44ad'
   ];
 
+  // group by year
   const yearGroups = {};
   sorted.forEach(e => {
-    const year = e.date.slice(0, 4);
+    const year = String(e.date).slice(0, 4);
     if (!yearGroups[year]) yearGroups[year] = [];
     yearGroups[year].push(e);
   });
 
+  // sorted asc
   const years = Object.keys(yearGroups).sort();
+
+  // add 12-31 only for closed years (when there is a reading in next year)
+  addSyntheticDec31ForClosedYears(yearGroups, years);
+
   const chartDatasets = [];
   const yearBaselines = {};
   const REFERENCE_YEAR = 2000;
@@ -136,15 +226,15 @@ function drawChart(i) {
     } else {
       const prevYear = years[yearIndex - 1];
       const prevYearEntries = yearGroups[prevYear];
-      const lastPrevEntry = prevYearEntries[prevYearEntries.length - 1];
+      const lastPrevEntry = prevYearEntries[prevYearEntries.length - 1]; // may be synthetic 12-31 if year is closed
       const firstCurrEntry = yearGroups[year][0];
 
-      const lastPrevDate = new Date(lastPrevEntry.date);
-      const firstCurrDate = new Date(firstCurrEntry.date);
-      const jan1 = new Date(`${year}-01-01`);
+      const lastPrevDate = toUTCDate(lastPrevEntry.date);
+      const firstCurrDate = toUTCDate(firstCurrEntry.date);
+      const jan1 = toUTCDate(`${year}-01-01`);
 
-      const totalDays = (firstCurrDate - lastPrevDate) / 86400000;
-      const daysToJan1 = (jan1 - lastPrevDate) / 86400000;
+      const totalDays = daysBetweenUTC(lastPrevDate, firstCurrDate);
+      const daysToJan1 = daysBetweenUTC(lastPrevDate, jan1);
 
       if (totalDays > 0 && daysToJan1 >= 0) {
         const rate = (firstCurrEntry.value - lastPrevEntry.value) / totalDays;
@@ -157,10 +247,11 @@ function drawChart(i) {
     yearBaselines[year] = baseline;
 
     const points = yearGroups[year].map(e => {
-      const monthDay = e.date.slice(5);
+      const monthDay = String(e.date).slice(5); // MM-DD
       return { x: `${REFERENCE_YEAR}-${monthDay}`, y: e.value - baseline };
     });
 
+    // enforce "Jan 1 = 0"
     points.unshift({ x: `${REFERENCE_YEAR}-01-01`, y: 0 });
 
     chartDatasets.push({
@@ -220,6 +311,8 @@ function drawChart(i) {
   updateStats(i, sorted, yearGroups, yearBaselines);
 }
 
+// ---------- Bar plugin ----------
+
 const deltaArrowsPlugin = {
   id: 'deltaArrows',
   afterDatasetsDraw(chart) {
@@ -263,13 +356,14 @@ const deltaArrowsPlugin = {
   }
 };
 
+// ---------- Bar charts (monthly totals across years, cross-year fixed) ----------
+
 function drawBarChart(i, sorted) {
   const barContainer = document.getElementById(`bar-container-${i}`);
   if (!barContainer) return;
 
   barContainer.innerHTML = '';
   datasets[i].barCharts = {};
-
   if (!sorted.length) return;
 
   const yearColors = [
@@ -278,63 +372,42 @@ function drawBarChart(i, sorted) {
     '#16a085', '#c0392b', '#2980b9', '#8e44ad'
   ];
 
-  const yearGroups = {};
-  sorted.forEach(e => {
-    const year = e.date.slice(0, 4);
-    if (!yearGroups[year]) yearGroups[year] = [];
-    yearGroups[year].push(e);
-  });
+  // Build month totals for ALL years from consecutive pairs (cross-year included)
+  const monthTotals = {}; // key: YYYY-MM -> value
+  for (let k = 0; k < sorted.length - 1; k++) {
+    const a = sorted[k];
+    const b = sorted[k + 1];
+    if (!a?.date || !b?.date) continue;
 
-  const years = Object.keys(yearGroups).sort().reverse();
+    const aDate = toUTCDate(a.date);
+    const bDate = toUTCDate(b.date);
+    const diff = Number(b.value) - Number(a.value);
+
+    if (!isFinite(diff)) continue;
+    if (!(bDate > aDate)) continue;
+
+    allocateByMonth(aDate, bDate, diff, monthTotals);
+  }
+
+  // Determine which years exist (from data + from monthTotals)
+  const yearsSet = new Set();
+  sorted.forEach(e => yearsSet.add(String(e.date).slice(0, 4)));
+  Object.keys(monthTotals).forEach(k => yearsSet.add(k.slice(0, 4)));
+
+  const years = Array.from(yearsSet).sort().reverse(); // newest first
 
   years.forEach((year, yearIndex) => {
-    const yearEntries = yearGroups[year];
-    const entries = yearEntries.map(e => ({
-      date: new Date(e.date),
-      month: e.date.slice(0, 7),
-      value: e.value
-    }));
-
-    const monthTotals = {};
-    for (let m = 1; m <= 12; m++) {
-      const monthKey = `${year}-${String(m).padStart(2, '0')}`;
-      monthTotals[monthKey] = 0;
-    }
-
-    for (let k = 0; k < entries.length - 1; k++) {
-      const a = entries[k];
-      const b = entries[k + 1];
-      const diff = b.value - a.value;
-      const days = (b.date - a.date) / 86400000;
-      if (days <= 0) continue;
-
-      if (a.month === b.month) {
-        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff;
-      } else {
-        const monthStart = new Date(a.month + '-01');
-        const nextMonthStart = new Date(monthStart);
-        nextMonthStart.setMonth(nextMonthStart.getMonth() + 1);
-
-        const firstMonthDaysCnt = (nextMonthStart - a.date) / 86400000;
-        const secondMonthDaysCnt = days - firstMonthDaysCnt;
-
-        monthTotals[a.month] = (monthTotals[a.month] || 0) + diff * (firstMonthDaysCnt / days);
-        monthTotals[b.month] = (monthTotals[b.month] || 0) + diff * (secondMonthDaysCnt / days);
-      }
-    }
-
     const labels = [];
     const data = [];
     for (let m = 1; m <= 12; m++) {
-      const monthKey = `${year}-${String(m).padStart(2, '0')}`;
-      labels.push(String(m).padStart(2, '0'));
-      data.push(monthTotals[monthKey] || 0);
+      const mm = String(m).padStart(2, '0');
+      labels.push(mm);
+      data.push(monthTotals[`${year}-${mm}`] || 0);
     }
 
-    const yearTotal = data.reduce((sum, val) => sum + val, 0);
+    const yearTotal = data.reduce((s, v) => s + v, 0);
 
-    const colorIndex = years.length - 1 - yearIndex;
-    const yearColor = yearColors[colorIndex % yearColors.length];
+    const yearColor = yearColors[(years.length - 1 - yearIndex) % yearColors.length];
 
     const yearSection = document.createElement('div');
     yearSection.style.marginTop = '15px';
@@ -353,7 +426,6 @@ function drawBarChart(i, sorted) {
     yearInfo.style.display = 'flex';
     yearInfo.style.alignItems = 'center';
     yearInfo.style.gap = '12px';
-
     yearInfo.innerHTML = `
       <span style="font-weight:bold; color:${yearColor}; font-size:16px">${year}</span>
       <span style="color:#aaa">Total: <strong style="color:${yearColor}">${Math.round(yearTotal)}</strong></span>
@@ -388,7 +460,7 @@ function drawBarChart(i, sorted) {
     const barChart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: labels,
+        labels,
         datasets: [{
           label: `Consumption ${year}`,
           data,
@@ -412,6 +484,8 @@ function drawBarChart(i, sorted) {
   });
 }
 
+// ---------- Stats ----------
+
 function updateStats(i, sorted, yearGroups, yearBaselines) {
   const statsBox = document.getElementById(`stats-${i}`);
   if (!sorted.length) { statsBox.innerHTML = ''; return; }
@@ -421,7 +495,7 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 
   years.forEach((year) => {
     const yearEntries = yearGroups[year];
-    const lastVal = yearEntries[yearEntries.length - 1].value;
+    const lastVal = yearEntries[yearEntries.length - 1].value; // may include synthetic 12-31 if year is closed
     const yearGrowth = lastVal - yearBaselines[year];
     statsHTML += `<strong>${year}:</strong> ${Math.round(yearGrowth)} | `;
   });
@@ -431,6 +505,8 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 
   statsBox.innerHTML = statsHTML;
 }
+
+// ---------- Render ----------
 
 function renderDatasets() {
   const host = document.getElementById('datasets');
