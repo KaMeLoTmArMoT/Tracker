@@ -104,8 +104,20 @@ function yyyymm(d) {
   return `${y}-${m}`;
 }
 
+function fmtYMD(y, m1, d) {
+  const mm = String(m1).padStart(2, '0');
+  const dd = String(d).padStart(2, '0');
+  return `${y}-${mm}-${dd}`;
+}
+
 function daysBetweenUTC(a, b) {
   return (b.getTime() - a.getTime()) / 86400000;
+}
+
+function daysInMonthUTC(year, monthIndex0) {
+  const start = new Date(Date.UTC(year, monthIndex0, 1));
+  const next = new Date(Date.UTC(year, monthIndex0 + 1, 1));
+  return Math.round(daysBetweenUTC(start, next));
 }
 
 // allocate `amount` proportionally to days in each month that intersects [start, end)
@@ -135,7 +147,7 @@ function allocateByMonth(startUTC, endUTC, amount, outMonthTotals) {
   }
 }
 
-// ---------- Line chart: add synthetic 12-31 only for "closed" years ----------
+// ---------- Forecast for "active month" (month of last reading) ----------
 
 function interpolateValueAt(targetDateUTC, leftEntry, rightEntry) {
   const a = toUTCDate(leftEntry.date);
@@ -150,8 +162,81 @@ function interpolateValueAt(targetDateUTC, leftEntry, rightEntry) {
   return leftEntry.value + rate * leftDays;
 }
 
+// returns null if not enough info
+function getActiveMonthForecast(sorted) {
+  if (!sorted?.length) return null;
+
+  const last = sorted[sorted.length - 1];
+  const lastUTC = toUTCDate(last.date);
+
+  const activeYear = lastUTC.getUTCFullYear();
+  const activeMonthIdx = lastUTC.getUTCMonth(); // 0..11
+  const activeMonth = String(activeMonthIdx + 1).padStart(2, '0');
+
+  const monthStartUTC = new Date(Date.UTC(activeYear, activeMonthIdx, 1));
+  const nextMonthStartUTC = new Date(Date.UTC(activeYear, activeMonthIdx + 1, 1));
+  const monthDays = Math.round(daysBetweenUTC(monthStartUTC, nextMonthStartUTC));
+
+  // inclusive days elapsed like "5 days = ..."
+  const elapsedDays = Math.max(1, Math.floor(daysBetweenUTC(monthStartUTC, lastUTC) + 1));
+
+  // need value at month start
+  const monthStartStr = fmtYMD(activeYear, activeMonthIdx + 1, 1);
+  const direct = sorted.find(e => e.date === monthStartStr);
+  let valueAtMonthStart = null;
+
+  if (direct) {
+    valueAtMonthStart = Number(direct.value);
+  } else {
+    // find pair prev < monthStart < next to interpolate
+    let prev = null;
+    let next = null;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const d = toUTCDate(sorted[i].date);
+      if (d < monthStartUTC) prev = sorted[i];
+      if (d > monthStartUTC) { next = sorted[i]; break; }
+      if (d.getTime() === monthStartUTC.getTime()) { next = sorted[i]; break; }
+    }
+
+    if (prev && next && toUTCDate(prev.date) < monthStartUTC && toUTCDate(next.date) > monthStartUTC) {
+      valueAtMonthStart = interpolateValueAt(monthStartUTC, prev, next);
+    }
+  }
+
+  if (valueAtMonthStart === null || !isFinite(valueAtMonthStart)) return null;
+
+  const consumedSoFar = Number(last.value) - Number(valueAtMonthStart);
+  if (!isFinite(consumedSoFar) || consumedSoFar <= 0) return null;
+
+  const predictedMonth = (consumedSoFar / elapsedDays) * monthDays;
+
+  // end-of-month date string for line chart
+  const monthEndUTC = new Date(Date.UTC(activeYear, activeMonthIdx + 1, 0)); // last day of month
+  const monthEndStr = fmtYMD(activeYear, activeMonthIdx + 1, monthEndUTC.getUTCDate());
+
+  // if already at last day, no forecast line needed
+  if (lastUTC.getTime() >= monthEndUTC.getTime()) return null;
+
+  return {
+    activeYear: String(activeYear),
+    activeMonthIdx,
+    activeMonth,
+    monthStartStr,
+    monthEndStr,
+    monthDays,
+    elapsedDays,
+    valueAtMonthStart,
+    lastDateStr: last.date,
+    lastValue: Number(last.value),
+    predictedMonth,
+    predictedEndValue: Number(valueAtMonthStart) + predictedMonth
+  };
+}
+
+// ---------- Line chart: synthetic 12-31 only for "closed" years ----------
+
 function addSyntheticDec31ForClosedYears(yearGroups, yearsSortedAsc) {
-  // yearsSortedAsc = ["2024","2025","2026"] etc
   for (let idx = 0; idx < yearsSortedAsc.length - 1; idx++) {
     const year = yearsSortedAsc[idx];
     const nextYear = yearsSortedAsc[idx + 1];
@@ -170,7 +255,7 @@ function addSyntheticDec31ForClosedYears(yearGroups, yearsSortedAsc) {
     const lastThisUTC = toUTCDate(lastThis.date);
     const firstNextUTC = toUTCDate(firstNext.date);
 
-    // Only when we really crossed into next year: lastThis < Dec31 < firstNext
+    // only "closed year": lastThis < 12-31 < firstNext
     if (lastThisUTC < dec31UTC && firstNextUTC > dec31UTC) {
       const syntheticValue = interpolateValueAt(dec31UTC, lastThis, firstNext);
       yearGroups[year] = [...list, { date: `${year}-12-31`, value: syntheticValue }]
@@ -194,6 +279,8 @@ function drawChart(i) {
 
   if (!sorted.length) return;
 
+  const forecast = getActiveMonthForecast(sorted);
+
   const yearColors = [
     '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
     '#9b59b6', '#1abc9c', '#e67e22', '#34495e',
@@ -208,10 +295,9 @@ function drawChart(i) {
     yearGroups[year].push(e);
   });
 
-  // sorted asc
-  const years = Object.keys(yearGroups).sort();
+  const years = Object.keys(yearGroups).sort(); // asc
 
-  // add 12-31 only for closed years (when there is a reading in next year)
+  // add 12-31 only for closed years
   addSyntheticDec31ForClosedYears(yearGroups, years);
 
   const chartDatasets = [];
@@ -226,7 +312,7 @@ function drawChart(i) {
     } else {
       const prevYear = years[yearIndex - 1];
       const prevYearEntries = yearGroups[prevYear];
-      const lastPrevEntry = prevYearEntries[prevYearEntries.length - 1]; // may be synthetic 12-31 if year is closed
+      const lastPrevEntry = prevYearEntries[prevYearEntries.length - 1];
       const firstCurrEntry = yearGroups[year][0];
 
       const lastPrevDate = toUTCDate(lastPrevEntry.date);
@@ -251,9 +337,9 @@ function drawChart(i) {
       return { x: `${REFERENCE_YEAR}-${monthDay}`, y: e.value - baseline };
     });
 
-    // enforce "Jan 1 = 0"
     points.unshift({ x: `${REFERENCE_YEAR}-01-01`, y: 0 });
 
+    // main year dataset
     chartDatasets.push({
       label: year,
       data: points,
@@ -265,6 +351,37 @@ function drawChart(i) {
       borderWidth: 2,
       spanGaps: false
     });
+
+    // forecast dashed dataset only for active year
+    if (forecast && year === forecast.activeYear) {
+      const x0 = `${REFERENCE_YEAR}-${String(forecast.lastDateStr).slice(5)}`;
+      const x1 = `${REFERENCE_YEAR}-${String(forecast.monthEndStr).slice(5)}`;
+
+      const y0 = forecast.lastValue - baseline;
+      const y1 = forecast.predictedEndValue - baseline;
+
+      const c = yearColors[yearIndex % yearColors.length];
+      const cSoft = `${c}99`; // add alpha
+
+      chartDatasets.push({
+        label: `${year} (forecast)`,
+        data: [
+          { x: x0, y: y0 },
+          { x: x1, y: y1 }
+        ],
+        borderColor: cSoft,
+        backgroundColor: cSoft,
+        borderDash: [6, 6],
+        fill: false,
+        tension: 0.0,
+        // важливо: зробимо кінець "зловимим"
+        pointRadius: (ctx) => (ctx.dataIndex === 1 ? 4 : 0),
+        pointHoverRadius: (ctx) => (ctx.dataIndex === 1 ? 8 : 0),
+        pointHitRadius: (ctx) => (ctx.dataIndex === 1 ? 14 : 0),
+        borderWidth: 2,
+        spanGaps: false
+      });
+    }
   });
 
   const xMin = new Date(`${REFERENCE_YEAR}-01-01`);
@@ -274,6 +391,11 @@ function drawChart(i) {
     type: 'line',
     data: { datasets: chartDatasets },
     options: {
+      interaction: {
+        mode: 'nearest',
+        axis: 'x',
+        intersect: false
+      },
       responsive: true,
       maintainAspectRatio: false,
       scales: {
@@ -307,18 +429,20 @@ function drawChart(i) {
     }
   });
 
-  drawBarChart(i, sorted);
+  drawBarChart(i, sorted, forecast);
   updateStats(i, sorted, yearGroups, yearBaselines);
 }
 
-// ---------- Bar plugin ----------
+// ---------- Bar plugin (use LAST dataset, so forecast dataset doesn't break arrows) ----------
 
 const deltaArrowsPlugin = {
   id: 'deltaArrows',
   afterDatasetsDraw(chart) {
     const { ctx } = chart;
-    const meta = chart.getDatasetMeta(0);
-    const data = chart.data.datasets[0]?.data || [];
+
+    const dsIndex = chart.data.datasets.length - 1; // last dataset = actual
+    const meta = chart.getDatasetMeta(dsIndex);
+    const data = chart.data.datasets[dsIndex]?.data || [];
     if (!meta || !meta.data?.length) return;
 
     const xScale = chart.scales[meta.xAxisID || meta.xScaleID || 'x'];
@@ -356,9 +480,9 @@ const deltaArrowsPlugin = {
   }
 };
 
-// ---------- Bar charts (monthly totals across years, cross-year fixed) ----------
+// ---------- Bar charts (monthly totals across years + forecast overlay) ----------
 
-function drawBarChart(i, sorted) {
+function drawBarChart(i, sorted, forecast) {
   const barContainer = document.getElementById(`bar-container-${i}`);
   if (!barContainer) return;
 
@@ -398,14 +522,14 @@ function drawBarChart(i, sorted) {
 
   years.forEach((year, yearIndex) => {
     const labels = [];
-    const data = [];
+    const actualData = [];
     for (let m = 1; m <= 12; m++) {
       const mm = String(m).padStart(2, '0');
       labels.push(mm);
-      data.push(monthTotals[`${year}-${mm}`] || 0);
+      actualData.push(monthTotals[`${year}-${mm}`] || 0);
     }
 
-    const yearTotal = data.reduce((s, v) => s + v, 0);
+    const yearTotal = actualData.reduce((s, v) => s + v, 0);
 
     const yearColor = yearColors[(years.length - 1 - yearIndex) % yearColors.length];
 
@@ -456,17 +580,43 @@ function drawBarChart(i, sorted) {
     yearSection.appendChild(chartWrap);
     barContainer.appendChild(yearSection);
 
+    const ds = [];
+
+    // forecast overlay dataset (behind) only for active year
+    if (
+      forecast &&
+      year === forecast.activeYear &&
+      isFinite(forecast.predictedMonth)
+    ) {
+      const monthIdx = forecast.activeMonthIdx; // 0..11
+      const predicted = new Array(12).fill(null);
+      predicted[monthIdx] = forecast.predictedMonth;
+
+      // show only if it extends beyond current actual
+      const actualThisMonth = actualData[monthIdx] || 0;
+      if (forecast.predictedMonth > actualThisMonth) {
+        ds.push({
+          label: `Forecast ${year}`,
+          data: predicted,
+          backgroundColor: `${yearColor}33`,
+          borderWidth: 0,
+          order: 0
+        });
+      }
+    }
+
+    // actual dataset (on top)
+    ds.push({
+      label: `Consumption ${year}`,
+      data: actualData,
+      backgroundColor: `${yearColor}AA`,
+      order: 1
+    });
+
     const ctx = canvas.getContext('2d');
     const barChart = new Chart(ctx, {
       type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: `Consumption ${year}`,
-          data,
-          backgroundColor: `${yearColor}AA`
-        }]
-      },
+      data: { labels, datasets: ds },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -475,7 +625,9 @@ function drawBarChart(i, sorted) {
           x: { grid: { color: '#2b2b2b' }, ticks: { padding: 5, color: '#ddd' } },
           y: { grid: { color: '#2b2b2b' }, ticks: { color: '#ddd' } }
         },
-        plugins: { legend: { display: false } }
+        plugins: {
+          legend: { display: false }
+        }
       },
       plugins: [deltaArrowsPlugin]
     });
@@ -495,7 +647,7 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 
   years.forEach((year) => {
     const yearEntries = yearGroups[year];
-    const lastVal = yearEntries[yearEntries.length - 1].value; // may include synthetic 12-31 if year is closed
+    const lastVal = yearEntries[yearEntries.length - 1].value;
     const yearGrowth = lastVal - yearBaselines[year];
     statsHTML += `<strong>${year}:</strong> ${Math.round(yearGrowth)} | `;
   });
