@@ -234,6 +234,51 @@ function getActiveMonthForecast(sorted) {
   };
 }
 
+// ---------- Same-level projection helpers ----------
+
+function mmddFromRefDate(d) {
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${mm}-${dd}`;
+}
+
+// points: [{x:'2000-MM-DD', y:number}, ...], sorted by x asc
+function findDateAtLevel(points, targetY) {
+  if (!points?.length || !isFinite(targetY)) return null;
+
+  let maxY = -Infinity;
+  for (const p of points) {
+    const yy = Number(p.y);
+    if (isFinite(yy)) maxY = Math.max(maxY, yy);
+  }
+  if (!(maxY >= targetY)) return null;
+
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const ya = Number(a.y);
+    const yb = Number(b.y);
+    if (!isFinite(ya) || !isFinite(yb)) continue;
+
+    if (ya === targetY) return new Date(a.x);
+    if (yb === targetY) return new Date(b.x);
+
+    const crosses = (ya < targetY && yb > targetY) || (ya > targetY && yb < targetY);
+    if (!crosses) continue;
+
+    const denom = (yb - ya);
+    if (denom === 0) continue;
+
+    const t = (targetY - ya) / denom; // 0..1
+    const ax = new Date(a.x).getTime();
+    const bx = new Date(b.x).getTime();
+    const x = ax + t * (bx - ax);
+    return new Date(x);
+  }
+
+  return null;
+}
+
 // ---------- Line chart: synthetic 12-31 only for "closed" years ----------
 
 function addSyntheticDec31ForClosedYears(yearGroups, yearsSortedAsc) {
@@ -302,7 +347,11 @@ function drawChart(i) {
 
   const chartDatasets = [];
   const yearBaselines = {};
+  const yearPointsMap = {}; // year -> baseline-applied points
   const REFERENCE_YEAR = 2000;
+
+  // clear comparisons for stats
+  datasets[i]._comparisons = null;
 
   years.forEach((year, yearIndex) => {
     let baseline = 0;
@@ -338,6 +387,7 @@ function drawChart(i) {
     });
 
     points.unshift({ x: `${REFERENCE_YEAR}-01-01`, y: 0 });
+    yearPointsMap[year] = points;
 
     // main year dataset
     chartDatasets.push({
@@ -361,7 +411,7 @@ function drawChart(i) {
       const y1 = forecast.predictedEndValue - baseline;
 
       const c = yearColors[yearIndex % yearColors.length];
-      const cSoft = `${c}99`; // add alpha
+      const cSoft = `${c}99`;
 
       chartDatasets.push({
         label: `${year} (forecast)`,
@@ -374,7 +424,6 @@ function drawChart(i) {
         borderDash: [6, 6],
         fill: false,
         tension: 0.0,
-        // важливо: зробимо кінець "зловимим"
         pointRadius: (ctx) => (ctx.dataIndex === 1 ? 4 : 0),
         pointHoverRadius: (ctx) => (ctx.dataIndex === 1 ? 8 : 0),
         pointHitRadius: (ctx) => (ctx.dataIndex === 1 ? 14 : 0),
@@ -383,6 +432,68 @@ function drawChart(i) {
       });
     }
   });
+
+  // ---- Same-level projection to other years (based on last reading) ----
+  const last = sorted[sorted.length - 1];
+  const currentYear = String(last.date).slice(0, 4);
+
+  if (yearPointsMap[currentYear] && isFinite(yearBaselines[currentYear])) {
+    const currY = Number(last.value) - Number(yearBaselines[currentYear]);
+    const currX = `${REFERENCE_YEAR}-${String(last.date).slice(5)}`;
+
+    const comparisons = [];
+
+    years.forEach((y) => {
+      if (y === currentYear) return;
+
+      const pts = yearPointsMap[y];
+      if (!pts?.length) return;
+
+      const matchDate = findDateAtLevel(pts, currY);
+      if (!matchDate) return;
+
+      const matchMMDD = mmddFromRefDate(matchDate);
+      const matchX = `${REFERENCE_YEAR}-${matchMMDD}`;
+
+      const idx = years.indexOf(y);
+      const color = yearColors[(idx >= 0 ? idx : 0) % yearColors.length];
+      const soft = `${color}77`;
+
+      // dashed connector at same Y from "now" to that year's date
+      chartDatasets.push({
+        label: `${y} (same level)`,
+        data: [{ x: currX, y: currY }, { x: matchX, y: currY }],
+        borderColor: soft,
+        backgroundColor: soft,
+        borderDash: [4, 4],
+        borderWidth: 1,
+        pointRadius: 0,
+        tension: 0,
+        fill: false
+      });
+
+      // marker point at the match
+      chartDatasets.push({
+        type: 'scatter',
+        label: `${y} (match)`,
+        data: [{ x: matchX, y: currY }],
+        pointRadius: 4,
+        pointHoverRadius: 8,
+        pointHitRadius: 14,
+        backgroundColor: color,
+        borderColor: color
+      });
+
+      comparisons.push({ year: y, mmdd: matchMMDD });
+    });
+
+    if (comparisons.length) {
+      datasets[i]._comparisons = {
+        currentDate: last.date,
+        items: comparisons
+      };
+    }
+  }
 
   const xMin = new Date(`${REFERENCE_YEAR}-01-01`);
   const xMax = new Date(`${REFERENCE_YEAR}-12-31`);
@@ -414,7 +525,19 @@ function drawChart(i) {
         }
       },
       plugins: {
-        legend: { labels: { color: '#ddd', font: { size: 12 } }, display: true },
+        legend: {
+          labels: {
+            color: '#ddd',
+            font: { size: 12 },
+            filter: (legendItem) => {
+              const t = legendItem.text || '';
+              if (t.includes('(same level)')) return false;
+              if (t.includes('(match)')) return false;
+              return true;
+            }
+          },
+          display: true
+        },
         tooltip: {
           callbacks: {
             title: function (context) {
@@ -422,6 +545,12 @@ function drawChart(i) {
               const month = date.toLocaleString('en-US', { month: 'long' });
               const day = date.getDate();
               return `${day} ${month}`;
+            },
+            label: function (context) {
+              const label = context.dataset?.label ? `${context.dataset.label}: ` : '';
+              const y = context.parsed?.y;
+              if (!isFinite(y)) return label;
+              return `${label}${Math.round(y)}`;
             }
           }
         }
@@ -583,16 +712,11 @@ function drawBarChart(i, sorted, forecast) {
     const ds = [];
 
     // forecast overlay dataset (behind) only for active year
-    if (
-      forecast &&
-      year === forecast.activeYear &&
-      isFinite(forecast.predictedMonth)
-    ) {
+    if (forecast && year === forecast.activeYear && isFinite(forecast.predictedMonth)) {
       const monthIdx = forecast.activeMonthIdx; // 0..11
       const predicted = new Array(12).fill(null);
       predicted[monthIdx] = forecast.predictedMonth;
 
-      // show only if it extends beyond current actual
       const actualThisMonth = actualData[monthIdx] || 0;
       if (forecast.predictedMonth > actualThisMonth) {
         ds.push({
@@ -625,9 +749,7 @@ function drawBarChart(i, sorted, forecast) {
           x: { grid: { color: '#2b2b2b' }, ticks: { padding: 5, color: '#ddd' } },
           y: { grid: { color: '#2b2b2b' }, ticks: { color: '#ddd' } }
         },
-        plugins: {
-          legend: { display: false }
-        }
+        plugins: { legend: { display: false } }
       },
       plugins: [deltaArrowsPlugin]
     });
@@ -654,6 +776,12 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 
   const totalGrowth = sorted[sorted.length - 1].value - sorted[0].value;
   statsHTML += `<strong>Total:</strong> ${Math.round(totalGrowth)}`;
+
+  const cmp = datasets[i]._comparisons;
+  if (cmp?.items?.length) {
+    const s = cmp.items.map(x => `${x.year}: ${x.mmdd}`).join(' · ');
+    statsHTML += `<br><span style="color:#aaa">Same level (${cmp.currentDate}):</span> <span style="color:#ddd">${s}</span>`;
+  }
 
   statsBox.innerHTML = statsHTML;
 }
